@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80f519f88cfa3614a954b223a05cf63f, type: 3}
+  m_Name: DragonSlayerSet
+  m_EditorClassIdentifier: 
+  setId: set_dragonslayer
+  setName: Dragon Slayer
+  description: Legendary equipment forged to slay dragons.
+  setIcon: {fileID: 0}
+  setColor: {r: 1, g: 0.2, b: 0.2, a: 1}
+  setPieceIds:
+  - sword_001
+  - armor_002
+  has2PieceBonus: 1
+  damageBonus2: 10
+  defenseBonus2: 0
+  critBonus2: 0.05
+  attackSpeedBonus2: 0
+  maxHPBonus2: 0
+  bonusDescription2: +10 Damage, +5% Crit
+  has4PieceBonus: 0
+  damageBonus4: 0
+  defenseBonus4: 0
+  critBonus4: 0
+  attackSpeedBonus4: 0
+  maxHPBonus4: 0
+  bonusDescription4: 
+  specialEffect4: 0
+  fullSetBonusDescription: 
