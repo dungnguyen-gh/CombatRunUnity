@@ -12,16 +12,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 96b114dc508e69b488d5cf27810dc7d0, type: 3}
   m_Name: IronSword
   m_EditorClassIdentifier: 
-  itemId: sword_001
+  itemId: iron_sword_001
   itemName: Iron Sword
   description: A basic iron sword. Reliable and sturdy.
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 9794293e4605a44d0826e3814ddc8431, type: 3}
   rarity: 0
-  slot: 0
-  price: 50
+  slot: 1
+  price: 100
   damageBonus: 5
   defenseBonus: 0
   critBonus: 0
   attackSpeedBonus: 0
   maxHPBonus: 0
-  itemSprite: {fileID: 0}
+  weaponType: 1
+  itemSprite: {fileID: 21300000, guid: 9794293e4605a44d0826e3814ddc8431, type: 3}
+  setId: 

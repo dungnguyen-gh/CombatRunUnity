@@ -10,7 +10,9 @@ public class DamageNumberManager : MonoBehaviour {
     
     [Header("Settings")]
     public GameObject damageNumberPrefab;
-    public int poolSize = 20;
+    public int poolSize = 50;
+    public int maxPoolSize = 200;
+    public bool allowPoolExpansion = true;
     public float numberLifetime = 1f;
     public float floatSpeed = 1f;
     public float critFontSizeMultiplier = 1.5f;
@@ -64,9 +66,12 @@ public class DamageNumberManager : MonoBehaviour {
     public void ShowDamage(int damage, Vector3 position, bool isCrit = false) {
         GameObject obj = GetFromPool();
         if (obj == null) {
-            Debug.LogWarning("DamageNumberManager: Pool exhausted!");
+            // Pool exhausted and can't expand - skip showing this damage number
+            // This is better than spamming warnings
             return;
         }
+        
+        activeObjectsCount++;
 
         obj.transform.position = position + Vector3.up * 0.5f;
         
@@ -104,7 +109,43 @@ public class DamageNumberManager : MonoBehaviour {
         if (damageNumberPool.Count > 0) {
             return damageNumberPool.Dequeue();
         }
+        
+        // Pool exhausted - try to expand if allowed
+        if (allowPoolExpansion && damageNumberPool.Count + activeObjectsCount < maxPoolSize) {
+            ExpandPool(10); // Add 10 more objects
+            if (damageNumberPool.Count > 0) {
+                return damageNumberPool.Dequeue();
+            }
+        }
+        
         return null;
+    }
+    
+    private int activeObjectsCount = 0;
+    
+    void ExpandPool(int amount) {
+        if (damageNumberPrefab == null) return;
+        
+        int objectsToCreate = Mathf.Min(amount, maxPoolSize - (damageNumberPool.Count + activeObjectsCount));
+        
+        for (int i = 0; i < objectsToCreate; i++) {
+            GameObject obj = Instantiate(damageNumberPrefab, transform);
+            obj.SetActive(false);
+            damageNumberPool.Enqueue(obj);
+            
+            // Cache TextMeshPro reference
+            var textMesh = obj.GetComponent<TMPro.TextMeshPro>();
+            if (textMesh != null) {
+                cachedTextMeshes[obj] = textMesh;
+                
+                // Store original font size
+                if (!originalFontSizes.ContainsKey(obj)) {
+                    originalFontSizes[obj] = textMesh.fontSize;
+                }
+            }
+        }
+        
+        Debug.Log($"[DamageNumberManager] Pool expanded by {objectsToCreate}. New capacity: {damageNumberPool.Count + activeObjectsCount}");
     }
 
     System.Collections.IEnumerator AnimateAndReturn(GameObject obj, TMPro.TextMeshPro textMesh) {
@@ -121,6 +162,8 @@ public class DamageNumberManager : MonoBehaviour {
         }
 
         if (obj != null) {
+            activeObjectsCount = Mathf.Max(0, activeObjectsCount - 1);
+            
             // FIX: Use cached TextMeshPro reference if the passed one is null
             if (textMesh == null) {
                 cachedTextMeshes.TryGetValue(obj, out textMesh);

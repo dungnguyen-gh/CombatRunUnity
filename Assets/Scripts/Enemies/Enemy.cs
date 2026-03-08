@@ -1,9 +1,15 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 public enum EnemyState { Idle, Chase, Attack, Dead }
 
+/// <summary>
+/// Enhanced Enemy class with improved pooling support, skill system integration,
+/// and auto-facing player on spawn.
+/// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(StatusEffect))]
 public class Enemy : MonoBehaviour {
     [Header("Stats")]
     public int maxHealth = 30;
@@ -25,6 +31,10 @@ public class Enemy : MonoBehaviour {
     public Animator animator;
     public SpriteRenderer spriteRenderer;
     public Rigidbody2D rb;
+    
+    [Header("Sprite Facing")]
+    [Tooltip("If true, sprite faces RIGHT by default (flipX=false). If false, sprite faces LEFT by default.")]
+    public bool spriteFacesRight = true;
 
     [Header("SPUM Integration")]
     public bool useSPUM = false;
@@ -48,15 +58,36 @@ public class Enemy : MonoBehaviour {
     private Vector2 startPosition;
     private Vector2 facingDirection = Vector2.right;
 
+    // Skill System
+    private EnemyAI enemyAI;
+    private bool hasAI = false;
+
+    // Status Effects
+    private StatusEffect statusEffect;
+    private List<Coroutine> activeCoroutines = new List<Coroutine>();
+
     // Events
     public System.Action<Enemy> OnDeath;
     public static System.Action<Enemy> OnEnemyDeathGlobal;
 
     void Awake() {
         if (rb == null) rb = GetComponent<Rigidbody2D>();
-        currentHealth = maxHealth;
-        startPosition = transform.position;
-
+        
+        // StatusEffect is required by [RequireComponent] attribute
+        // It should be auto-added by Unity, but we check defensively
+        if (statusEffect == null) {
+            statusEffect = GetComponent<StatusEffect>();
+            // Silent fallback - don't log warnings to avoid console spam
+            // The EnemyPool should have added this during prefab setup
+            if (statusEffect == null) {
+                statusEffect = gameObject.AddComponent<StatusEffect>();
+            }
+        }
+        
+        // Get optional AI component
+        enemyAI = GetComponent<EnemyAI>();
+        hasAI = enemyAI != null;
+        
         // Auto-find SPUM components if using SPUM
         if (useSPUM) {
             if (spumPrefabs == null)
@@ -64,12 +95,193 @@ public class Enemy : MonoBehaviour {
         }
     }
 
-    void Start() {
-        // Try to find player, with fallback for spawn order issues
+    void OnEnable() {
+        // Reset state when enabled (called when retrieved from pool)
+        ResetFromPool();
+    }
+
+    void OnDisable() {
+        // Clean up when returning to pool
+        CleanupForPool();
+    }
+
+    /// <summary>
+    /// Reset enemy state for object pooling.
+    /// Called when enemy is retrieved from the pool.
+    /// </summary>
+    public void ResetFromPool() {
+        // Find player and face them immediately
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        
+        ResetState();
+        
+        // Face the player on spawn
+        if (player != null) {
+            FacePlayer();
+        }
+        
+        // Re-initialize SPUM if needed
+        if (useSPUM && spumPrefabs != null) {
+            InitializeSPUM();
+        }
+        
+        // Ensure collider is enabled
+        var col = GetComponent<Collider2D>();
+        if (col != null) col.enabled = true;
+        
+        // Reset velocity
+        if (rb != null) {
+            rb.linearVelocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
+        
+        // Reset AI if present
+        if (hasAI && enemyAI != null) {
+            enemyAI.ResetAI();
+        }
+    }
+
+    /// <summary>
+    /// Internal state reset - clears all runtime state.
+    /// </summary>
+    void ResetState() {
+        currentHealth = maxHealth;
+        isDead = false;
+        currentState = EnemyState.Idle;
+        attackTimer = 0f;
+        currentPatrolIndex = 0;
+        facingDirection = Vector2.right;
+        
+        // Clear status effects
+        if (statusEffect != null) {
+            statusEffect.ClearStatus();
+        }
+        
+        // Stop all active coroutines
+        StopAllActiveCoroutines();
+        activeCoroutines.Clear();
+        
+        // Reset animation
+        if (useSPUM && spumPrefabs != null) {
+            PlayIdleAnimation();
+        } else if (animator != null) {
+            animator.SetBool("IsMoving", false);
+            animator.ResetTrigger("Die");
+            animator.ResetTrigger("Hit");
+            animator.ResetTrigger("Attack");
+        }
+        
+        // Reset sprite direction
+        UpdateSpriteFacing(Vector2.right);
+    }
+
+    /// <summary>
+    /// Cleanup when returning to pool - stops coroutines and clears effects.
+    /// </summary>
+    void CleanupForPool() {
+        // Stop all coroutines
+        StopAllActiveCoroutines();
+        
+        // Clear status effects
+        if (statusEffect != null) {
+            statusEffect.ClearStatus();
+        }
+        
+        // Reset velocity
+        if (rb != null) {
+            rb.linearVelocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
+        
+        // Stop any ongoing animations
+        if (animator != null) {
+            animator.SetBool("IsMoving", false);
+        }
+    }
+
+    /// <summary>
+    /// Stops all tracked coroutines safely.
+    /// </summary>
+    void StopAllActiveCoroutines() {
+        foreach (var coroutine in activeCoroutines) {
+            if (coroutine != null) {
+                StopCoroutine(coroutine);
+            }
+        }
+        activeCoroutines.Clear();
+    }
+
+    /// <summary>
+    /// Starts a coroutine and tracks it for cleanup.
+    /// </summary>
+    Coroutine StartTrackedCoroutine(IEnumerator routine) {
+        Coroutine coroutine = StartCoroutine(routine);
+        activeCoroutines.Add(coroutine);
+        return coroutine;
+    }
+
+
+
+    void InitializeSPUM() {
+        if (spumPrefabs == null) return;
+        
+        // Check if animator is properly configured before initializing
+        if (spumPrefabs._anim == null) {
+            Debug.LogWarning($"[Enemy] SPUM prefab on {gameObject.name} has no Animator assigned!");
+            return;
+        }
+        
+        // Check if runtimeAnimatorController is valid
+        if (spumPrefabs._anim.runtimeAnimatorController == null) {
+            Debug.LogWarning($"[Enemy] SPUM prefab on {gameObject.name} has no Animator Controller! " +
+                           $"Please assign an AnimatorController to the SPUM prefab's animator.");
+            return;
+        }
+        
+        // CRITICAL FIX: Check if controller is already an OverrideController
+        // If so, we can't call OverrideControllerInit() - it would try to nest override controllers
+        if (spumPrefabs._anim.runtimeAnimatorController is AnimatorOverrideController) {
+            // Already an override controller - skip initialization
+            // The animations should still work
+            Debug.Log($"[Enemy] SPUM on {gameObject.name} already has OverrideController - skipping initialization");
+        } else {
+            // Safe to initialize - it's a base controller
+            try {
+                spumPrefabs.OverrideControllerInit();
+            }
+            catch (System.Exception ex) {
+                Debug.LogWarning($"[Enemy] SPUM OverrideControllerInit failed on {gameObject.name}: {ex.Message}");
+            }
+        }
+        
+        try {
+            if (!spumPrefabs.allListsHaveItemsExist()) {
+                spumPrefabs.PopulateAnimationLists();
+            }
+        }
+        catch (System.Exception ex) {
+            Debug.LogWarning($"[Enemy] SPUM PopulateAnimationLists failed on {gameObject.name}: {ex.Message}");
+        }
+        
+        PlayIdleAnimation();
+    }
+
+    // Cached squared distances for efficient comparison
+    private float sqrDetectionRange;
+    private float sqrAttackRange;
+    
+    void Start() {
+        // Cache squared distances for efficient comparison
+        sqrDetectionRange = detectionRange * detectionRange;
+        sqrAttackRange = attackRange * attackRange;
+        
+        // Try to find player, with fallback for spawn order issues
         if (player == null) {
-            // Player might not be spawned yet - will retry in Update when needed
-            Debug.LogWarning("[Enemy] Player not found at Start, will retry when needed");
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+            if (player == null) {
+                // Player might not be spawned yet - will retry in Update when needed
+                Debug.LogWarning("[Enemy] Player not found at Start, will retry when needed");
+            }
         }
 
         // Initialize SPUM if using it
@@ -77,22 +289,25 @@ public class Enemy : MonoBehaviour {
             InitializeSPUM();
         }
     }
-
-    void InitializeSPUM() {
-        spumPrefabs.OverrideControllerInit();
-        
-        if (!spumPrefabs.allListsHaveItemsExist()) {
-            spumPrefabs.PopulateAnimationLists();
-        }
-        
-        PlayIdleAnimation();
-    }
-
+    
     void Update() {
         if (isDead) return;
         
-        UpdateState();
+        // Cache player reference once per frame
+        if (player == null) {
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        }
         
+        // If AI is present, let it handle state
+        if (hasAI && enemyAI != null && enemyAI.enabled) {
+            // AI handles its own state, we just update animations
+            UpdateAnimationFromAI();
+        } else {
+            // Legacy state machine
+            UpdateState();
+        }
+        
+        // Update animations
         if (useSPUM) {
             UpdateSPUMAnimation();
         } else {
@@ -103,14 +318,44 @@ public class Enemy : MonoBehaviour {
     void FixedUpdate() {
         if (isDead) return;
         
-        switch (currentState) {
-            case EnemyState.Chase:
-                ChasePlayer();
+        // Only execute movement if AI is not present or disabled
+        if (!hasAI || !enemyAI.enabled) {
+            switch (currentState) {
+                case EnemyState.Chase:
+                    ChasePlayer();
+                    break;
+                case EnemyState.Idle:
+                    if (patrol && patrolPoints.Length > 0) {
+                        Patrol();
+                    }
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates animations based on AI state.
+    /// </summary>
+    void UpdateAnimationFromAI() {
+        if (enemyAI == null) return;
+        
+        AIState aiState = enemyAI.GetCurrentState();
+        
+        // Map AI state to animation
+        switch (aiState) {
+            case AIState.Idle:
+            case AIState.UseSkill: // Keep previous animation during skill cast
+                // Keep current
                 break;
-            case EnemyState.Idle:
-                if (patrol && patrolPoints.Length > 0) {
-                    Patrol();
-                }
+            case AIState.Chase:
+            case AIState.Reposition:
+                // Moving
+                break;
+            case AIState.Attack:
+                // Attacking
+                break;
+            case AIState.Retreat:
+                // Moving away
                 break;
         }
     }
@@ -118,25 +363,27 @@ public class Enemy : MonoBehaviour {
     void UpdateState() {
         if (player == null) return;
 
-        float distanceToPlayer = Vector2.Distance(transform.position, player.position);
+        // Use squared distance for more efficient comparison (avoids sqrt)
+        float sqrDistanceToPlayer = ((Vector2)transform.position - (Vector2)player.position).sqrMagnitude;
 
         switch (currentState) {
             case EnemyState.Idle:
-                if (distanceToPlayer <= detectionRange) {
+                if (sqrDistanceToPlayer <= sqrDetectionRange) {
                     currentState = EnemyState.Chase;
                 }
                 break;
 
             case EnemyState.Chase:
-                if (distanceToPlayer > detectionRange * 1.5f) {
+                // 1.5f squared = 2.25f
+                if (sqrDistanceToPlayer > sqrDetectionRange * 2.25f) {
                     currentState = EnemyState.Idle;
-                } else if (distanceToPlayer <= attackRange) {
+                } else if (sqrDistanceToPlayer <= sqrAttackRange) {
                     currentState = EnemyState.Attack;
                 }
                 break;
 
             case EnemyState.Attack:
-                if (distanceToPlayer > attackRange) {
+                if (sqrDistanceToPlayer > sqrAttackRange) {
                     currentState = EnemyState.Chase;
                 } else {
                     TryAttack();
@@ -157,14 +404,7 @@ public class Enemy : MonoBehaviour {
             rb.MovePosition(rb.position + direction * moveSpeed * Time.fixedDeltaTime);
             
             facingDirection = direction;
-            
-            // Update facing direction
-            if (useSPUM && spumPrefabs != null) {
-                UpdateSPUMFacing(direction);
-            } else if (spriteRenderer != null) {
-                if (direction.x > 0.1f) spriteRenderer.flipX = false;
-                else if (direction.x < -0.1f) spriteRenderer.flipX = true;
-            }
+            UpdateSpriteFacing(direction);
         }
     }
 
@@ -181,12 +421,24 @@ public class Enemy : MonoBehaviour {
             rb.MovePosition(rb.position + direction * moveSpeed * 0.5f * Time.fixedDeltaTime);
             
             facingDirection = direction;
-            
-            if (useSPUM && spumPrefabs != null) {
-                UpdateSPUMFacing(direction);
-            } else if (spriteRenderer != null) {
-                if (direction.x > 0.1f) spriteRenderer.flipX = false;
-                else if (direction.x < -0.1f) spriteRenderer.flipX = true;
+            UpdateSpriteFacing(direction);
+        }
+    }
+
+    /// <summary>
+    /// Updates the sprite facing direction.
+    /// </summary>
+    void UpdateSpriteFacing(Vector2 direction) {
+        if (useSPUM && spumPrefabs != null) {
+            UpdateSPUMFacing(direction);
+        } else if (spriteRenderer != null) {
+            // Calculate flip based on sprite's default facing direction
+            // If spriteFacesRight: moving right = no flip, moving left = flip
+            // If !spriteFacesRight: moving right = flip, moving left = no flip
+            if (direction.x > 0.1f) {
+                spriteRenderer.flipX = !spriteFacesRight;
+            } else if (direction.x < -0.1f) {
+                spriteRenderer.flipX = spriteFacesRight;
             }
         }
     }
@@ -194,11 +446,42 @@ public class Enemy : MonoBehaviour {
     void UpdateSPUMFacing(Vector2 direction) {
         if (spumPrefabs == null) return;
         
-        // Use rotation Y for facing (same as player)
-        if (direction.x > 0.1f)
-            spumPrefabs.transform.rotation = Quaternion.Euler(0, 180, 0); // Face Left
-        else if (direction.x < -0.1f)
-            spumPrefabs.transform.rotation = Quaternion.Euler(0, 0, 0);   // Face Right
+        // Use localScale for 2D sprite flipping
+        // Supports both right-facing and left-facing default sprites
+        Vector3 scale = spumPrefabs.transform.localScale;
+        float absScaleX = Mathf.Abs(scale.x);
+        
+        if (direction.x > 0.1f) {
+            // Facing right
+            scale.x = spriteFacesRight ? absScaleX : -absScaleX;
+        } else if (direction.x < -0.1f) {
+            // Facing left
+            scale.x = spriteFacesRight ? -absScaleX : absScaleX;
+        }
+        spumPrefabs.transform.localScale = scale;
+    }
+
+    /// <summary>
+    /// Faces the player immediately. Called on spawn and when needed.
+    /// </summary>
+    public void FacePlayer() {
+        if (player == null) {
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+            if (player == null) return;
+        }
+        
+        Vector2 toPlayer = ((Vector2)player.position - (Vector2)transform.position).normalized;
+        FaceDirection(toPlayer);
+    }
+
+    /// <summary>
+    /// Faces a specific direction.
+    /// </summary>
+    public void FaceDirection(Vector2 direction) {
+        if (direction == Vector2.zero) return;
+        
+        facingDirection = direction;
+        UpdateSpriteFacing(direction);
     }
 
     void TryAttack() {
@@ -241,13 +524,28 @@ public class Enemy : MonoBehaviour {
     void UpdateSPUMAnimation() {
         if (spumPrefabs == null) return;
         
-        bool isMoving = currentState == EnemyState.Chase || 
-            (currentState == EnemyState.Idle && patrol);
-        
-        if (isMoving) {
-            PlayMoveAnimation();
+        // If AI is present, use its state for animation
+        if (hasAI && enemyAI != null && enemyAI.enabled) {
+            AIState aiState = enemyAI.GetCurrentState();
+            bool isMoving = aiState == AIState.Chase || aiState == AIState.Reposition || 
+                           (aiState == AIState.Retreat) ||
+                           (aiState == AIState.Idle && patrol);
+            
+            if (isMoving) {
+                PlayMoveAnimation();
+            } else {
+                PlayIdleAnimation();
+            }
         } else {
-            PlayIdleAnimation();
+            // Legacy behavior
+            bool isMoving = currentState == EnemyState.Chase || 
+                (currentState == EnemyState.Idle && patrol);
+            
+            if (isMoving) {
+                PlayMoveAnimation();
+            } else {
+                PlayIdleAnimation();
+            }
         }
     }
 
@@ -302,7 +600,12 @@ public class Enemy : MonoBehaviour {
         DamageNumberManager.Instance?.ShowDamage(damage, transform.position);
         
         // Flash red
-        StartCoroutine(DamageFlash());
+        StartTrackedCoroutine(DamageFlash());
+
+        // Interrupt skill cast if AI is present
+        if (hasAI && enemyAI != null) {
+            enemyAI.InterruptSkill();
+        }
 
         if (currentHealth <= 0) {
             Die();
@@ -314,6 +617,18 @@ public class Enemy : MonoBehaviour {
                 animator.SetTrigger("Hit");
             }
         }
+    }
+
+    /// <summary>
+    /// Heals the enemy. Negative damage also works.
+    /// </summary>
+    public void Heal(int amount) {
+        if (isDead || amount <= 0) return;
+        
+        currentHealth = Mathf.Min(currentHealth + amount, maxHealth);
+        
+        // Show heal number (negative damage)
+        DamageNumberManager.Instance?.ShowDamage(-amount, transform.position);
     }
 
     IEnumerator DamageFlash() {
@@ -356,11 +671,24 @@ public class Enemy : MonoBehaviour {
         // Drop rewards
         DropRewards();
 
+        // Invoke events
         OnDeath?.Invoke(this);
         OnEnemyDeathGlobal?.Invoke(this);
+        
+        // Return to pool after delay
+        StartTrackedCoroutine(ReturnToPoolAfterDelay(3f));
+    }
 
-        // Destroy after animation
-        Destroy(gameObject, 1f);
+    IEnumerator ReturnToPoolAfterDelay(float delay) {
+        yield return new WaitForSeconds(delay);
+        
+        // Return to pool
+        if (EnemyPool.Instance != null) {
+            EnemyPool.Instance.ReturnToPool(gameObject);
+        } else {
+            // Fallback if no pool exists
+            Destroy(gameObject);
+        }
     }
 
     void DropRewards() {
@@ -381,6 +709,62 @@ public class Enemy : MonoBehaviour {
             Instantiate(itemDropPrefabs[index], transform.position + Vector3.up * 0.5f, Quaternion.identity);
         }
     }
+
+    #region Public API
+
+    /// <summary>
+    /// Sets the current enemy state.
+    /// </summary>
+    public void SetState(EnemyState newState) {
+        currentState = newState;
+    }
+
+    /// <summary>
+    /// Gets the current enemy state.
+    /// </summary>
+    public EnemyState GetCurrentState() {
+        return currentState;
+    }
+
+    /// <summary>
+    /// Gets the current health.
+    /// </summary>
+    public int GetCurrentHealth() {
+        return currentHealth;
+    }
+
+    /// <summary>
+    /// Gets health as a percentage (0-1).
+    /// </summary>
+    public float GetHealthPercent() {
+        return (float)currentHealth / maxHealth;
+    }
+
+    /// <summary>
+    /// Checks if the enemy is dead.
+    /// </summary>
+    public bool IsDead {
+        get { return isDead; }
+    }
+
+    /// <summary>
+    /// Gets the maximum health.
+    /// </summary>
+    public int MaxHealth {
+        get { return maxHealth; }
+    }
+
+    /// <summary>
+    /// Gets the player transform.
+    /// </summary>
+    public Transform GetPlayer() {
+        if (player == null) {
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        }
+        return player;
+    }
+
+    #endregion
 
     void OnDrawGizmosSelected() {
         Gizmos.color = Color.yellow;

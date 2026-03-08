@@ -4,6 +4,7 @@ using UnityEngine;
 /// <summary>
 /// Tracks active equipment set bonuses and applies their effects.
 /// Prevents duplicate component additions through proper tracking.
+/// Enhanced with events for set bonus changes and methods to get current set progress.
 /// </summary>
 public class SetBonusManager : MonoBehaviour {
     public static SetBonusManager Instance { get; private set; }
@@ -22,12 +23,19 @@ public class SetBonusManager : MonoBehaviour {
     private HashSet<SetSpecialEffect> activeSpecialEffects = new HashSet<SetSpecialEffect>();
 
     // Events
-    public System.Action<EquipmentSetSO, int> OnSetBonusActivated;
-    public System.Action<EquipmentSetSO> OnSetBonusLost;
+    public System.Action<EquipmentSetSO, int> OnSetBonusActivated;  // Set, piece count (2 or 4)
+    public System.Action<EquipmentSetSO> OnSetBonusLost;             // Set
+    public System.Action<EquipmentSetSO, int> OnSetProgressChanged;  // Set, current piece count
+    public System.Action OnAllSetBonusesUpdated;                     // Called when any set bonus changes
 
-    // FIX: Store delegates as fields for proper unsubscription
+    // Store delegates as fields for proper unsubscription
     private System.Action<ItemSO> onItemEquippedDelegate;
     private System.Action<ItemSO> onItemUnequippedDelegate;
+    
+    // Track previous bonus states to detect changes
+    private Dictionary<EquipmentSetSO, int> previousPieceCounts = new Dictionary<EquipmentSetSO, int>();
+    private Dictionary<EquipmentSetSO, bool> previous2PieceState = new Dictionary<EquipmentSetSO, bool>();
+    private Dictionary<EquipmentSetSO, bool> previous4PieceState = new Dictionary<EquipmentSetSO, bool>();
 
     void Awake() {
         if (Instance == null) {
@@ -44,7 +52,7 @@ public class SetBonusManager : MonoBehaviour {
 
         LoadAllSets();
         
-        // FIX: Subscribe to equipment changes using stored delegates
+        // Subscribe to equipment changes using stored delegates
         if (inventory != null) {
             onItemEquippedDelegate = _ => UpdateSetBonuses();
             onItemUnequippedDelegate = _ => UpdateSetBonuses();
@@ -57,7 +65,7 @@ public class SetBonusManager : MonoBehaviour {
     }
 
     void OnDestroy() {
-        // FIX: Unsubscribe from events using stored delegates to prevent memory leaks
+        // Unsubscribe from events using stored delegates to prevent memory leaks
         if (inventory != null) {
             if (onItemEquippedDelegate != null)
                 inventory.OnItemEquipped -= onItemEquippedDelegate;
@@ -75,8 +83,16 @@ public class SetBonusManager : MonoBehaviour {
     /// Updates all active set bonuses based on currently equipped items.
     /// </summary>
     public void UpdateSetBonuses() {
-        // Clear current bonuses tracking
+        // Store previous states before clearing
+        Dictionary<EquipmentSetSO, int> oldPieceCounts = new Dictionary<EquipmentSetSO, int>(previousPieceCounts);
+        Dictionary<EquipmentSetSO, bool> old2PieceState = new Dictionary<EquipmentSetSO, bool>(previous2PieceState);
+        Dictionary<EquipmentSetSO, bool> old4PieceState = new Dictionary<EquipmentSetSO, bool>(previous4PieceState);
+        
+        // Clear current tracking
         activeBonuses.Clear();
+        previousPieceCounts.Clear();
+        previous2PieceState.Clear();
+        previous4PieceState.Clear();
         
         // Track which effects were active before
         HashSet<SetSpecialEffect> previousEffects = new HashSet<SetSpecialEffect>(activeSpecialEffects);
@@ -90,28 +106,62 @@ public class SetBonusManager : MonoBehaviour {
             if (count > 0) {
                 setCounts[set] = count;
                 
+                bool has2Piece = count >= 2 && set.has2PieceBonus;
+                bool has4Piece = count >= 4 && set.has4PieceBonus;
+                
                 ActiveSetBonus bonus = new ActiveSetBonus {
                     set = set,
                     pieceCount = count,
-                    has2Piece = count >= 2 && set.has2PieceBonus,
-                    has4Piece = count >= 4 && set.has4PieceBonus
+                    has2Piece = has2Piece,
+                    has4Piece = has4Piece
                 };
                 activeBonuses.Add(bonus);
 
-                // Notify if threshold reached
-                if (count == 2 && set.has2PieceBonus) {
+                // Track current state
+                previousPieceCounts[set] = count;
+                previous2PieceState[set] = has2Piece;
+                previous4PieceState[set] = has4Piece;
+
+                // Check for state changes and notify
+                bool had2Piece = old2PieceState.ContainsKey(set) && old2PieceState[set];
+                bool had4Piece = old4PieceState.ContainsKey(set) && old4PieceState[set];
+                int oldCount = oldPieceCounts.ContainsKey(set) ? oldPieceCounts[set] : 0;
+
+                // Notify if 2-piece threshold reached for the first time
+                if (has2Piece && !had2Piece) {
                     OnSetBonusActivated?.Invoke(set, 2);
                     ShowSetBonusNotification(set, 2);
                 }
-                if (count == 4 && set.has4PieceBonus) {
+                
+                // Notify if 4-piece threshold reached for the first time
+                if (has4Piece && !had4Piece) {
                     OnSetBonusActivated?.Invoke(set, 4);
                     ShowSetBonusNotification(set, 4);
                 }
+                
+                // Notify if piece count changed
+                if (count != oldCount) {
+                    OnSetProgressChanged?.Invoke(set, count);
+                }
+                
+                // Notify if bonus lost
+                if (!has2Piece && had2Piece) {
+                    OnSetBonusLost?.Invoke(set);
+                }
+                if (!has4Piece && had4Piece) {
+                    // Only notify if still have 2-piece (otherwise already notified by has2Piece check)
+                    if (has2Piece) {
+                        OnSetBonusLost?.Invoke(set);
+                    }
+                }
 
                 // Track special effects
-                if (bonus.has4Piece) {
+                if (has4Piece) {
                     activeSpecialEffects.Add(set.specialEffect4);
                 }
+            } else if (oldPieceCounts.ContainsKey(set) && oldPieceCounts[set] > 0) {
+                // Had pieces before, now have none
+                OnSetBonusLost?.Invoke(set);
             }
         }
 
@@ -120,6 +170,9 @@ public class SetBonusManager : MonoBehaviour {
         
         // Handle special effects (remove old ones, add new ones)
         UpdateSpecialEffects(previousEffects, activeSpecialEffects);
+        
+        // Notify that all bonuses have been updated
+        OnAllSetBonusesUpdated?.Invoke();
     }
 
     /// <summary>
@@ -237,10 +290,14 @@ public class SetBonusManager : MonoBehaviour {
     void ShowSetBonusNotification(EquipmentSetSO set, int pieceCount) {
         string bonusText = pieceCount == 2 ? set.bonusDescription2 : set.bonusDescription4;
         if (UIManager.Instance != null) {
-            UIManager.Instance.ShowNotification($"{set.setName} ({pieceCount}) Bonus: {bonusText}");
+            string setColorHex = ColorUtility.ToHtmlStringRGB(set.setColor);
+            UIManager.Instance.ShowNotification($"<color=#{setColorHex}>{set.setName}</color> ({pieceCount}) Bonus: {bonusText}");
         }
     }
 
+    /// <summary>
+    /// Checks if a specific set bonus is active.
+    /// </summary>
     public bool HasSetBonus(EquipmentSetSO set, int pieceCount) {
         foreach (var bonus in activeBonuses) {
             if (bonus.set == set && bonus.pieceCount >= pieceCount) {
@@ -250,12 +307,100 @@ public class SetBonusManager : MonoBehaviour {
         return false;
     }
 
+    /// <summary>
+    /// Gets the current piece count for a set.
+    /// </summary>
     public int GetPieceCount(EquipmentSetSO set) {
         foreach (var bonus in activeBonuses) {
             if (bonus.set == set) return bonus.pieceCount;
         }
         return 0;
     }
+    
+    /// <summary>
+    /// Gets the full set progress information including which pieces are equipped.
+    /// </summary>
+    public SetProgressInfo GetSetProgress(EquipmentSetSO set) {
+        SetProgressInfo info = new SetProgressInfo {
+            set = set,
+            equippedCount = GetPieceCount(set),
+            totalPieces = set.setPieceIds.Count,
+            has2PieceBonus = false,
+            has4PieceBonus = false,
+            equippedPieceIds = new List<string>()
+        };
+        
+        // Check which specific pieces are equipped
+        if (inventory != null) {
+            if (inventory.equippedWeapon != null && set.setPieceIds.Contains(inventory.equippedWeapon.itemId)) {
+                info.equippedPieceIds.Add(inventory.equippedWeapon.itemId);
+            }
+            if (inventory.equippedArmor != null && set.setPieceIds.Contains(inventory.equippedArmor.itemId)) {
+                info.equippedPieceIds.Add(inventory.equippedArmor.itemId);
+            }
+        }
+        
+        // Check bonus states
+        foreach (var bonus in activeBonuses) {
+            if (bonus.set == set) {
+                info.has2PieceBonus = bonus.has2Piece;
+                info.has4PieceBonus = bonus.has4Piece;
+                break;
+            }
+        }
+        
+        return info;
+    }
+    
+    /// <summary>
+    /// Gets all active set bonuses.
+    /// </summary>
+    public List<ActiveSetBonus> GetAllActiveBonuses() {
+        return new List<ActiveSetBonus>(activeBonuses);
+    }
+    
+    /// <summary>
+    /// Finds a set by its ID.
+    /// </summary>
+    public EquipmentSetSO GetSetById(string setId) {
+        foreach (var set in allSets) {
+            if (set.setId == setId) {
+                return set;
+            }
+        }
+        return null;
+    }
+    
+    /// <summary>
+    /// Gets all sets that contain a specific item.
+    /// </summary>
+    public List<EquipmentSetSO> GetSetsForItem(ItemSO item) {
+        List<EquipmentSetSO> sets = new List<EquipmentSetSO>();
+        if (item == null) return sets;
+        
+        foreach (var set in allSets) {
+            if (set.setPieceIds.Contains(item.itemId)) {
+                sets.Add(set);
+            }
+        }
+        return sets;
+    }
+}
+
+/// <summary>
+/// Helper class containing detailed set progress information.
+/// </summary>
+[System.Serializable]
+public class SetProgressInfo {
+    public EquipmentSetSO set;
+    public int equippedCount;
+    public int totalPieces;
+    public bool has2PieceBonus;
+    public bool has4PieceBonus;
+    public List<string> equippedPieceIds;
+    
+    public float ProgressPercent => totalPieces > 0 ? (float)equippedCount / totalPieces : 0f;
+    public bool IsComplete => equippedCount >= totalPieces;
 }
 
 // Helper component for LifeSteal

@@ -185,11 +185,14 @@ public class SkillSynergyManager : MonoBehaviour {
     bool CheckSynergyMatch(SkillSynergy synergy) {
         int[] sequence = synergy.requiredSkillSequence;
         
-        // Need enough casts
-        if (recentSkillCasts.Count < sequence.Length) return false;
+        // Need enough casts - check both lists to ensure they're in sync
+        if (recentSkillCasts.Count < sequence.Length || recentSkillTimes.Count < sequence.Length) return false;
 
         // Check if last N casts match the sequence
         int startIndex = recentSkillCasts.Count - sequence.Length;
+        
+        // Safety check: ensure startIndex is valid for both lists
+        if (startIndex < 0 || startIndex >= recentSkillTimes.Count) return false;
         
         for (int i = 0; i < sequence.Length; i++) {
             if (recentSkillCasts[startIndex + i] != sequence[i]) {
@@ -281,8 +284,11 @@ public class SkillSynergyManager : MonoBehaviour {
 
         for (int i = recentSkillTimes.Count - 1; i >= 0; i--) {
             if (currentTime - recentSkillTimes[i] > maxWindow) {
+                // Ensure both lists have the same index before removing
+                if (i < recentSkillCasts.Count) {
+                    recentSkillCasts.RemoveAt(i);
+                }
                 recentSkillTimes.RemoveAt(i);
-                recentSkillCasts.RemoveAt(i);
             }
         }
     }

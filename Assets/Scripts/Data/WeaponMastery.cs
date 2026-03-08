@@ -60,4 +60,16 @@ public class WeaponMasteryData {
         if (masteryLevel >= killsPerLevel.Length) return -1;
         return killsPerLevel[masteryLevel];
     }
+
+    /// <summary>
+    /// Gets total kills (alias for killCount).
+    /// </summary>
+    public int totalKills => killCount;
+
+    /// <summary>
+    /// Gets progress to next level (0-1).
+    /// </summary>
+    public float GetProgressToNextLevel() {
+        return masteryProgress;
+    }
 }

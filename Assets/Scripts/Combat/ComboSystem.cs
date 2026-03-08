@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using TMPro;
 
 /// <summary>
 /// Manages melee combo counting with time windows, damage/attack speed bonuses,

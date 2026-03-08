@@ -73,6 +73,20 @@ public class PlayerController : MonoBehaviour {
     public bool isDead = false;
     public bool isReviving = false;
 
+    [Header("Invulnerability After Revive")]
+    [Tooltip("Duration of invulnerability after revive (seconds)")]
+    public float invulnerabilityDuration = 3f;
+    [Tooltip("Flash interval during invulnerability (seconds)")]
+    public float invulnerabilityFlashInterval = 0.15f;
+    [Tooltip("VFX prefab for shield effect during invulnerability")]
+    public GameObject invulnerabilityShieldVFX;
+    
+    // Private state
+    private bool isInvulnerable = false;
+    private GameObject activeShieldVFX;
+    private Coroutine invulnerabilityCoroutine;
+    private Coroutine reviveCountdownCoroutine;
+
     // Cached component references
     private BurnOnHitEffect cachedBurnOnHitEffect;
 
@@ -86,6 +100,9 @@ public class PlayerController : MonoBehaviour {
     public System.Action<int> OnGoldChanged;
     public System.Action<float> OnMeleeAttack;
     public System.Action<int> OnSkillCast;
+    public System.Action OnPlayerDied;
+    public System.Action OnPlayerRevived;
+    public System.Action<bool> OnInvulnerabilityChanged;
 
     // FIX: Store lambda delegates to enable proper unsubscription
     private System.Action<InputAction.CallbackContext> skill1Delegate;
@@ -117,13 +134,13 @@ public class PlayerController : MonoBehaviour {
     void SetupInputActions() {
         // If no input asset assigned, create default
         if (inputActions == null) {
-            Debug.LogWarning("No Input Action Asset assigned! Please assign GameControls input actions.");
+            Debug.LogWarning("[PlayerController] No Input Action Asset assigned! Please assign GameControls input actions.");
             return;
         }
 
         gameplayActions = inputActions.FindActionMap("Gameplay");
         if (gameplayActions == null) {
-            Debug.LogError("Could not find 'Gameplay' action map in Input Action Asset!");
+            Debug.LogError("[PlayerController] Could not find 'Gameplay' action map in Input Action Asset!");
             return;
         }
 
@@ -136,6 +153,12 @@ public class PlayerController : MonoBehaviour {
         inventoryAction = gameplayActions.FindAction("Inventory");
         pauseAction = gameplayActions.FindAction("Pause");
 
+        // Validate skill actions
+        ValidateSkillAction(skill1Action, "Skill1");
+        ValidateSkillAction(skill2Action, "Skill2");
+        ValidateSkillAction(skill3Action, "Skill3");
+        ValidateSkillAction(skill4Action, "Skill4");
+
         // Bind callbacks
         // FIX: Store lambda delegates for proper unsubscription
         skill1Delegate = ctx => OnSkillPerformed(ctx, 0);
@@ -145,6 +168,8 @@ public class PlayerController : MonoBehaviour {
 
         if (attackAction != null)
             attackAction.performed += OnAttackPerformed;
+        else
+            Debug.LogWarning("[PlayerController] 'Attack' action not found in Input Action Asset!");
         
         if (skill1Action != null)
             skill1Action.performed += skill1Delegate;
@@ -157,9 +182,24 @@ public class PlayerController : MonoBehaviour {
 
         if (inventoryAction != null)
             inventoryAction.performed += OnInventoryPerformed;
+        else
+            Debug.LogWarning("[PlayerController] 'Inventory' action not found in Input Action Asset!");
         
         if (pauseAction != null)
             pauseAction.performed += OnPausePerformed;
+        else
+            Debug.LogWarning("[PlayerController] 'Pause' action not found in Input Action Asset!");
+    }
+    
+    /// <summary>
+    /// Validates that a skill input action exists and logs helpful error if not.
+    /// </summary>
+    void ValidateSkillAction(InputAction action, string actionName) {
+        if (action == null) {
+            Debug.LogError($"[PlayerController] '{actionName}' action not found in Input Action Asset! " +
+                          "Skill inputs won't work. Make sure your Input Action Asset has a 'Gameplay' action map " +
+                          "with actions named Skill1, Skill2, Skill3, and Skill4.");
+        }
     }
 
     void OnEnable() {
@@ -201,6 +241,9 @@ public class PlayerController : MonoBehaviour {
     }
 
     void Update() {
+        // Don't process input if dead or reviving
+        if (isDead || isReviving) return;
+        
         HandleInput();
         HandleCooldowns();
         
@@ -211,6 +254,9 @@ public class PlayerController : MonoBehaviour {
     }
 
     void FixedUpdate() {
+        // Don't move if dead or reviving
+        if (isDead || isReviving) return;
+        
         HandleMovement();
     }
 
@@ -344,7 +390,26 @@ public class PlayerController : MonoBehaviour {
     }
 
     void TryCastSkill(int index) {
-        if (skillCaster.CastSkill(index)) {
+        // Validate skill caster exists
+        if (skillCaster == null) {
+            skillCaster = GetComponent<SkillCaster>();
+            if (skillCaster == null) {
+                Debug.LogError("[PlayerController] No SkillCaster found! Cannot cast skills.");
+                return;
+            }
+        }
+        
+        // Validate skill exists at index
+        var skill = skillCaster.GetSkill(index);
+        if (skill == null) {
+            if (Application.isEditor) {
+                Debug.LogWarning($"[PlayerController] No skill assigned to slot {index + 1}! Assign a SkillSO in the inspector.");
+            }
+            return;
+        }
+        
+        // Try to cast the skill
+        if (skillCaster.TryCastSkill(index)) {
             OnSkillCast?.Invoke(index);
 
             // Trigger SPUM skill animation if using SPUM
@@ -354,17 +419,22 @@ public class PlayerController : MonoBehaviour {
         }
     }
 
-    public void SetShieldActive(bool active) {
-        isShieldActive = active;
-    }
-
     public void TakeDamage(int damage) {
+        // Cannot take damage while dead, reviving, or invulnerable
+        if (isDead || isReviving || isInvulnerable) {
+            // Show invulnerability effect if trying to take damage while invulnerable
+            if (isInvulnerable && gameObject.activeInHierarchy) {
+                ShowInvulnerabilityEffect();
+            }
+            return;
+        }
+
         if (isShieldActive) {
             damage = Mathf.RoundToInt(damage * (1f - shieldDamageReduction));
         }
 
-        int damageTaken = Mathf.Max(1, damage - stats.Defense);
-        stats.TakeDamage(damageTaken);
+        // Defense is already applied in stats.TakeDamage
+        stats.TakeDamage(damage);
         
         OnHealthChanged?.Invoke(stats.currentHP, stats.MaxHP);
 
@@ -381,6 +451,39 @@ public class PlayerController : MonoBehaviour {
         if (stats.currentHP <= 0) {
             Die();
         }
+    }
+
+    /// <summary>
+    /// Shows a brief visual effect when damage is blocked by invulnerability.
+    /// </summary>
+    void ShowInvulnerabilityEffect() {
+        // Could instantiate a small VFX here to show "blocked" or "immune"
+        // For now, we'll just do a quick flash
+        if (activeShieldVFX != null) {
+            // Pulse the shield
+            StartCoroutine(PulseShieldEffect());
+        }
+    }
+
+    IEnumerator PulseShieldEffect() {
+        if (activeShieldVFX == null) yield break;
+        
+        Transform shieldTransform = activeShieldVFX.transform;
+        Vector3 originalScale = shieldTransform.localScale;
+        
+        // Quick pulse animation
+        float duration = 0.2f;
+        float elapsed = 0f;
+        
+        while (elapsed < duration) {
+            elapsed += Time.deltaTime;
+            float t = elapsed / duration;
+            float scaleMultiplier = 1f + Mathf.Sin(t * Mathf.PI) * 0.2f;
+            shieldTransform.localScale = originalScale * scaleMultiplier;
+            yield return null;
+        }
+        
+        shieldTransform.localScale = originalScale;
     }
 
     IEnumerator DamageFlash() {
@@ -437,6 +540,16 @@ public class PlayerController : MonoBehaviour {
         isDead = true;
         currentLives--;
         
+        // Notify listeners
+        OnPlayerDied?.Invoke();
+        
+        // Stop any active invulnerability
+        if (invulnerabilityCoroutine != null) {
+            StopCoroutine(invulnerabilityCoroutine);
+            invulnerabilityCoroutine = null;
+        }
+        RemoveInvulnerability();
+
         // Play death animation
         if (useSPUM && spumBridge != null) {
             spumBridge.PlayDeathAnimation();
@@ -449,7 +562,7 @@ public class PlayerController : MonoBehaviour {
         
         if (currentLives > 0) {
             // Start revive process
-            StartCoroutine(ReviveAfterDelay());
+            reviveCountdownCoroutine = StartCoroutine(ReviveAfterDelay());
         } else {
             // Game Over - no lives left
             StartCoroutine(GameOver());
@@ -485,27 +598,144 @@ public class PlayerController : MonoBehaviour {
         if (useSPUM && spumBridge != null) {
             spumBridge.PlayIdleAnimation();
         }
+        else if (animator != null) {
+            animator.SetTrigger("Revive");
+        }
+        
+        // Start invulnerability period
+        StartInvulnerability();
         
         // Show revive notification
         UIManager.Instance?.ShowNotification($"Revived! {currentLives} lives remaining");
         
-        Debug.Log("Player Revived!");
+        // Notify listeners
+        OnPlayerRevived?.Invoke();
+        
+        Debug.Log("Player Revived! Invulnerability active for " + invulnerabilityDuration + " seconds.");
     }
 
+    #region Invulnerability System
+
+    /// <summary>
+    /// Starts the invulnerability period after revive.
+    /// </summary>
+    void StartInvulnerability() {
+        isInvulnerable = true;
+        OnInvulnerabilityChanged?.Invoke(true);
+        
+        // Create shield VFX if assigned
+        if (invulnerabilityShieldVFX != null && activeShieldVFX == null) {
+            activeShieldVFX = Instantiate(invulnerabilityShieldVFX, transform.position, Quaternion.identity);
+            activeShieldVFX.transform.SetParent(transform);
+        }
+        
+        // Start the invulnerability coroutine
+        invulnerabilityCoroutine = StartCoroutine(InvulnerabilityRoutine());
+    }
+
+    /// <summary>
+    /// Coroutine that handles the invulnerability duration and visual effects.
+    /// </summary>
+    System.Collections.IEnumerator InvulnerabilityRoutine() {
+        float remainingTime = invulnerabilityDuration;
+        
+        // Get all sprite renderers for flashing effect
+        SpriteRenderer[] allRenderers = GetAllSpriteRenderers();
+        
+        while (remainingTime > 0) {
+            // Flash effect - toggle transparency
+            float alpha = Mathf.PingPong(Time.time * (1f / invulnerabilityFlashInterval), 1f) * 0.5f + 0.5f;
+            SetSpritesAlpha(allRenderers, alpha);
+            
+            remainingTime -= Time.deltaTime;
+            yield return null;
+        }
+        
+        // Remove invulnerability
+        RemoveInvulnerability();
+        
+        // Restore full opacity
+        SetSpritesAlpha(allRenderers, 1f);
+        
+        invulnerabilityCoroutine = null;
+    }
+
+    /// <summary>
+    /// Removes invulnerability state and cleans up effects.
+    /// </summary>
+    void RemoveInvulnerability() {
+        isInvulnerable = false;
+        OnInvulnerabilityChanged?.Invoke(false);
+        
+        // Remove shield VFX
+        if (activeShieldVFX != null) {
+            Destroy(activeShieldVFX);
+            activeShieldVFX = null;
+        }
+        
+        // Ensure sprites are fully visible
+        SpriteRenderer[] allRenderers = GetAllSpriteRenderers();
+        SetSpritesAlpha(allRenderers, 1f);
+        
+        Debug.Log("Invulnerability ended.");
+    }
+
+    /// <summary>
+    /// Gets all sprite renderers on the player (for SPUM or regular).
+    /// </summary>
+    SpriteRenderer[] GetAllSpriteRenderers() {
+        if (useSPUM && spumEquipment != null && spumEquipment.spumPrefabs != null) {
+            return spumEquipment.spumPrefabs.GetComponentsInChildren<SpriteRenderer>(true);
+        }
+        return GetComponentsInChildren<SpriteRenderer>(true);
+    }
+
+    /// <summary>
+    /// Sets alpha value for all sprite renderers.
+    /// </summary>
+    void SetSpritesAlpha(SpriteRenderer[] renderers, float alpha) {
+        foreach (var renderer in renderers) {
+            if (renderer != null) {
+                Color color = renderer.color;
+                color.a = alpha;
+                renderer.color = color;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks if the player is currently invulnerable.
+    /// </summary>
+    public bool IsInvulnerable() => isInvulnerable;
+
+    /// <summary>
+    /// Gets the remaining invulnerability time (0 if not invulnerable).
+    /// </summary>
+    public float GetRemainingInvulnerabilityTime() {
+        // This is an approximation - the coroutine tracks the actual time
+        return isInvulnerable ? invulnerabilityDuration : 0f;
+    }
+
+    #endregion
+
     System.Collections.IEnumerator GameOver() {
+        // Notify GameManager
+        GameManager.Instance?.OnPlayerGameOver();
+        
+        // Show game over UI
         UIManager.Instance?.ShowGameOver();
         
         yield return new WaitForSeconds(2f);
         
-        // Option 1: Restart level
-        // UnityEngine.SceneManagement.SceneManager.LoadScene(
-        //     UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
-        
-        // Option 2: Just disable player
-        gameObject.SetActive(false);
+        // Destroy the player object instead of just disabling
+        // This properly removes the player from the game
+        Destroy(gameObject);
     }
 
     public void Heal(int amount) {
+        // Cannot heal while dead
+        if (isDead) return;
+        
         stats.Heal(amount);
         OnHealthChanged?.Invoke(stats.currentHP, stats.MaxHP);
     }
@@ -584,6 +814,24 @@ public class PlayerController : MonoBehaviour {
     public Vector2 GetMoveInput() => moveInput;
     public Vector2 GetFacingDirection() => facingDirection;
     public bool IsMoving() => isMoving;
+    
+    // Shield system
+    public void SetShieldActive(bool active) {
+        isShieldActive = active;
+        // Visual effect
+        if (active) {
+            // Could show shield VFX here
+        }
+    }
+    
+    public bool IsShieldActive() => isShieldActive;
+    public float GetShieldDamageReduction() => isShieldActive ? shieldDamageReduction : 0f;
+
+    // State getters
+    public bool IsDead() => isDead;
+    public bool IsReviving() => isReviving;
+    public int GetCurrentLives() => currentLives;
+    public int GetMaxLives() => maxLives;
 
     void OnDrawGizmosSelected() {
         // Show melee range

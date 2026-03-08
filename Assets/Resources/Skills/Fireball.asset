@@ -9,19 +9,67 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 00000000000000000000000000000000, type: 0}
-  m_Name: Fireball
-  m_EditorClassIdentifier: 
-  skillId: skill_003
+  m_Script: {fileID: 11500000, guid: 3e35f3c9dcde42641a293e893b6826f0, type: 3}
+  m_Name: FireBall
+  m_EditorClassIdentifier: Assembly-CSharp::SkillSO
+  skillId: fireball
   skillName: Fireball
-  description: Shoot a fireball in the direction you're facing.
-  icon: {fileID: 0}
-  skillSlot: 2
-  cooldownTime: 4
+  description: Launch a piercing fireball
+  icon: {fileID: 21300000, guid: c50502eaf434eca458b44aac45e8e65c, type: 3}
+  skillSlot: 1
+  rarity: 0
   skillType: 2
-  damageMultiplier: 1.2
+  targeting: 2
+  castTime: 0
+  canMoveWhileCasting: 1
+  requiresLineOfSight: 0
+  cooldownTime: 5
+  manaCost: 0
+  healthCost: 0
+  damageMultiplier: 2
+  flatDamageBonus: 0
+  critChanceBonus: 0
+  critDamageMultiplier: 1
   range: 10
-  radius: 1
+  radius: 0
+  coneAngle: 360
   duration: 0
-  effectPrefab: {fileID: 0}
+  tickRate: 1
+  maxStacks: 1
+  dashDistance: 0
+  dashSpeed: 20
+  dashInvulnerable: 0
+  leaveTrail: 0
+  summonPrefab: {fileID: 0}
+  summonCount: 1
+  summonDuration: 10
+  summonFollowPlayer: 1
+  chainBounces: 3
+  chainRange: 5
+  chainDamageFalloff: 0.8
+  castEffectPrefab: {fileID: 0}
+  effectPrefab: {fileID: 4091720094128738193, guid: 98c5686ec1478ca42b5b7bc6a85a1b53, type: 3}
+  projectilePrefab: {fileID: 4091720094128738193, guid: 98c5686ec1478ca42b5b7bc6a85a1b53, type: 3}
+  persistentEffectPrefab: {fileID: 0}
   castSound: {fileID: 0}
+  impactSound: {fileID: 0}
+  loopSound: {fileID: 0}
+  animationTrigger: Skill
+  spumAnimationIndex: 0
+  animationSpeedMultiplier: 1
+  useScreenShake: 0
+  screenShakeIntensity: 0.3
+  screenShakeDuration: 0.2
+  useSlowMotion: 0
+  slowMotionScale: 0.5
+  slowMotionDuration: 0.3
+  applyBurn: 0
+  applyFreeze: 0
+  applyPoison: 0
+  applyStun: 0
+  statusDuration: 3
+  pierceEnemies: 0
+  explodeOnImpact: 0
+  explosionRadius: 2
+  homing: 0
+  homingStrength: 5

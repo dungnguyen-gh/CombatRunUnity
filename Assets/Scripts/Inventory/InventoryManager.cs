@@ -9,8 +9,24 @@ public class InventoryManager : MonoBehaviour {
     public static InventoryManager Instance { get; private set; }
 
     [Header("Inventory")]
-    public List<ItemSO> items = new List<ItemSO>();
+    [SerializeField] private List<ItemSO> items = new List<ItemSO>();
     public int maxInventorySlots = 20;
+    
+    /// <summary>
+    /// Read-only access to inventory items. Use AddItem/RemoveItem to modify.
+    /// </summary>
+    public IReadOnlyList<ItemSO> Items => items.AsReadOnly();
+    
+    [Header("Currency")]
+    [SerializeField] private int gold = 0;
+    public int Gold {
+        get => gold;
+        private set {
+            gold = value;
+            OnGoldChanged?.Invoke(gold);
+            OnInventoryChanged?.Invoke();
+        }
+    }
 
     [Header("Equipment")]
     public ItemSO equippedWeapon;
@@ -23,6 +39,7 @@ public class InventoryManager : MonoBehaviour {
     public System.Action OnInventoryChanged;
     public System.Action<ItemSO> OnItemEquipped;
     public System.Action<ItemSO> OnItemUnequipped;
+    public System.Action<int> OnGoldChanged;
 
     void Awake() {
         if (Instance == null) {
@@ -235,11 +252,33 @@ public class InventoryManager : MonoBehaviour {
     }
 
     /// <summary>
+    /// Adds gold to the player's inventory.
+    /// </summary>
+    public void AddGold(int amount) {
+        if (amount > 0) {
+            Gold += amount;
+        }
+    }
+    
+    /// <summary>
+    /// Attempts to remove gold from the player's inventory.
+    /// </summary>
+    /// <returns>True if gold was successfully removed.</returns>
+    public bool RemoveGold(int amount) {
+        if (amount <= 0) return true;
+        if (Gold >= amount) {
+            Gold -= amount;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Calculates the sell price for an item (50% of buy price).
     /// </summary>
     public int GetSellPrice(ItemSO item) {
         if (item == null) return 0;
-        return Mathf.RoundToInt(item.price * 0.5f);
+        return Mathf.RoundToInt(item.sellPrice > 0 ? item.sellPrice : item.price * 0.5f);
     }
 
     /// <summary>
@@ -254,5 +293,29 @@ public class InventoryManager : MonoBehaviour {
     /// </summary>
     public int GetEmptySlotCount() {
         return maxInventorySlots - items.Count;
+    }
+    
+    /// <summary>
+    /// Gets the number of items currently in inventory.
+    /// </summary>
+    public int GetItemCount() {
+        return items.Count;
+    }
+    
+    /// <summary>
+    /// Gets an item at a specific index.
+    /// </summary>
+    /// <param name="index">Index in the inventory list</param>
+    /// <returns>The item at that index, or null if invalid</returns>
+    public ItemSO GetItem(int index) {
+        if (index < 0 || index >= items.Count) return null;
+        return items[index];
+    }
+    
+    /// <summary>
+    /// Checks if an item exists in the inventory.
+    /// </summary>
+    public bool ContainsItem(ItemSO item) {
+        return items.Contains(item);
     }
 }

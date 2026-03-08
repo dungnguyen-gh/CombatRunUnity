@@ -1,47 +1,34 @@
-using System.Collections.Generic;
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
-/// Manages shop stock, item purchasing/selling, and equipment preview.
+/// Manages shop inventory, stock rotation, and purchase/sale logic.
+/// Works with AutoBindingInventoryUI for automatic UI sync.
 /// </summary>
 public class ShopManager : MonoBehaviour {
     public static ShopManager Instance { get; private set; }
-
-    [Header("Shop Settings")]
-    public int shopSlotCount = 6;
-    public float refreshCost = 50f;
-    public ItemRarity[] rarityDistribution = { 
-        ItemRarity.Common, ItemRarity.Common, ItemRarity.Common, 
-        ItemRarity.Uncommon, ItemRarity.Uncommon, 
-        ItemRarity.Rare 
-    };
-
-    [Header("Current Stock")]
-    public List<ItemSO> currentStock = new List<ItemSO>();
-    public List<int> currentPrices = new List<int>();
-
-    [Header("All Items")]
-    public List<ItemSO> allItems = new List<ItemSO>();
-
-    [Header("References")]
-    public InventoryManager inventory;
-    public PlayerController player;
-
-    [Header("Preview")]
-    public ItemSO previewItem;
-    private ItemSO previouslyEquippedItem;
-    private EquipSlot previewSlot;
-    private bool isPreviewing = false;
     
-    // Cached items by rarity for performance
-    private Dictionary<ItemRarity, List<ItemSO>> itemsByRarity;
-
+    [Header("Stock")]
+    public List<ItemSO> availableItems = new List<ItemSO>();
+    public List<ItemSO> currentStock = new List<ItemSO>();
+    public int shopSlots = 6;
+    
+    [Header("Refresh")]
+    public bool autoRefreshOnOpen = true;
+    public float refreshInterval = 300f; // 5 minutes
+    private float refreshTimer;
+    
+    [Header("Pricing")]
+    public float priceMultiplier = 1f; // Can change based on reputation/region
+    
     // Events
     public System.Action OnShopRefreshed;
-    public System.Action<ItemSO> OnItemPreviewed;
     public System.Action<ItemSO> OnItemPurchased;
     public System.Action<ItemSO> OnItemSold;
-
+    
+    // References
+    private InventoryManager inventory;
+    
     void Awake() {
         if (Instance == null) {
             Instance = this;
@@ -50,210 +37,175 @@ public class ShopManager : MonoBehaviour {
             Destroy(gameObject);
         }
     }
-
-    void Start() {
-        if (inventory == null) inventory = InventoryManager.Instance;
-        if (player == null) {
-            player = FindFirstObjectByType<PlayerController>();
-            if (player == null) {
-                Debug.LogError("[ShopManager] No PlayerController found!");
-                enabled = false;
-                return;
-            }
-        }
-        
-        LoadAllItems();
-    }
-
-    void LoadAllItems() {
-        // Load all ItemSO from Resources
-        ItemSO[] loadedItems = Resources.LoadAll<ItemSO>("Items");
-        allItems.AddRange(loadedItems);
-        
-        // Build rarity cache for better performance
-        BuildRarityCache();
-    }
     
-    /// <summary>
-    /// Builds a cache of items organized by rarity for faster lookup.
-    /// </summary>
-    void BuildRarityCache() {
-        itemsByRarity = new Dictionary<ItemRarity, List<ItemSO>>();
+    void Start() {
+        inventory = InventoryManager.Instance;
         
-        foreach (ItemRarity rarity in System.Enum.GetValues(typeof(ItemRarity))) {
-            itemsByRarity[rarity] = new List<ItemSO>();
-        }
-        
-        foreach (var item in allItems) {
-            if (item != null) {
-                itemsByRarity[item.rarity].Add(item);
-            }
-        }
-    }
-
-    public void OpenShop() {
-        if (currentStock.Count == 0) {
+        if (autoRefreshOnOpen) {
             RefreshStock();
         }
     }
-
+    
+    void OnDestroy() {
+        // Cleanup any subscriptions if needed
+    }
+    
+    void Update() {
+        refreshTimer += Time.deltaTime;
+        if (refreshTimer >= refreshInterval) {
+            RefreshStock();
+            refreshTimer = 0;
+        }
+    }
+    
+    /// <summary>
+    /// Refreshes the shop stock with random items from available items.
+    /// </summary>
     public void RefreshStock() {
         currentStock.Clear();
-        currentPrices.Clear();
-
-        for (int i = 0; i < shopSlotCount; i++) {
-            ItemRarity rarity = rarityDistribution[Random.Range(0, rarityDistribution.Length)];
-            ItemSO item = GetRandomItemOfRarity(rarity);
+        
+        if (availableItems.Count == 0) {
+            Debug.LogWarning("[ShopManager] No available items to stock!");
+            OnShopRefreshed?.Invoke();
+            return;
+        }
+        
+        // Create weighted pool based on rarity
+        List<ItemSO> weightedPool = new List<ItemSO>();
+        foreach (var item in availableItems) {
+            int weight = item.rarity switch {
+                ItemRarity.Common => 40,
+                ItemRarity.Uncommon => 30,
+                ItemRarity.Rare => 20,
+                ItemRarity.Epic => 8,
+                ItemRarity.Legendary => 2,
+                _ => 10
+            };
             
-            if (item != null) {
-                currentStock.Add(item);
-                currentPrices.Add(item.price);
+            for (int i = 0; i < weight; i++) {
+                weightedPool.Add(item);
             }
         }
-
+        
+        // Fill stock slots
+        for (int i = 0; i < shopSlots; i++) {
+            if (weightedPool.Count > 0) {
+                var randomItem = weightedPool[Random.Range(0, weightedPool.Count)];
+                currentStock.Add(randomItem);
+            }
+        }
+        
         OnShopRefreshed?.Invoke();
     }
-
+    
     /// <summary>
-    /// Gets a random item of the specified rarity using cached data.
+    /// Buys an item from the shop.
     /// </summary>
-    ItemSO GetRandomItemOfRarity(ItemRarity rarity) {
-        if (itemsByRarity != null && itemsByRarity.TryGetValue(rarity, out var matchingItems)) {
-            if (matchingItems.Count > 0) {
-                return matchingItems[Random.Range(0, matchingItems.Count)];
-            }
-        }
-        
-        // Fallback to direct search if cache not available
-        List<ItemSO> fallbackItems = allItems.FindAll(item => item != null && item.rarity == rarity);
-        if (fallbackItems.Count > 0) {
-            return fallbackItems[Random.Range(0, fallbackItems.Count)];
-        }
-        
-        return null;
-    }
-
-    /// <summary>
-    /// Previews an item on the character without purchasing.
-    /// </summary>
-    public void PreviewItem(ItemSO item) {
-        if (item == null) return;
-        
-        if (isPreviewing) {
-            EndPreview();
-        }
-
-        previewItem = item;
-        isPreviewing = true;
-        previewSlot = item.slot;
-
-        // Store currently equipped item
-        if (item.slot == EquipSlot.Weapon) {
-            previouslyEquippedItem = inventory.equippedWeapon;
-            player.SetWeaponVisual(item.itemSprite);
-        } else if (item.slot == EquipSlot.Armor) {
-            previouslyEquippedItem = inventory.equippedArmor;
-            player.SetArmorVisual(item.itemSprite);
-        }
-
-        // Apply stats temporarily for preview
-        inventory.PreviewEquip(item);
-
-        OnItemPreviewed?.Invoke(item);
-    }
-
-    /// <summary>
-    /// Ends the current preview and restores previous equipment.
-    /// </summary>
-    public void EndPreview() {
-        if (!isPreviewing) return;
-
-        // Restore previous equipment visual
-        if (previewSlot == EquipSlot.Weapon) {
-            player.SetWeaponVisual(previouslyEquippedItem?.itemSprite);
-        } else if (previewSlot == EquipSlot.Armor) {
-            player.SetArmorVisual(previouslyEquippedItem?.itemSprite);
-        }
-
-        // Restore stats
-        inventory.EndPreview();
-
-        previewItem = null;
-        previouslyEquippedItem = null;
-        isPreviewing = false;
-    }
-
-    /// <summary>
-    /// Attempts to purchase an item from the shop.
-    /// </summary>
-    /// <param name="slotIndex">Index in the shop stock</param>
+    /// <param name="slotIndex">Index in currentStock</param>
     /// <returns>True if purchase succeeded</returns>
-    public bool PurchaseItem(int slotIndex) {
+    public bool BuyItem(int slotIndex) {
         if (slotIndex < 0 || slotIndex >= currentStock.Count) return false;
-
-        ItemSO item = currentStock[slotIndex];
-        int price = currentPrices[slotIndex];
-
-        if (player.gold >= price) {
-            // Check if inventory has space
-            if (inventory.items.Count >= inventory.maxInventorySlots) {
-                if (UIManager.Instance != null) {
-                    UIManager.Instance.ShowNotification("Inventory full!");
-                }
-                return false;
-            }
-
-            // Spend gold and add item
-            player.SpendGold(price);
-            inventory.AddItem(item);
-            
-            // Remove from shop
-            currentStock.RemoveAt(slotIndex);
-            currentPrices.RemoveAt(slotIndex);
-
-            EndPreview();
-            OnItemPurchased?.Invoke(item);
-            return true;
-        } else {
-            if (UIManager.Instance != null) {
-                UIManager.Instance.ShowNotification("Not enough gold!");
-            }
+        
+        var item = currentStock[slotIndex];
+        if (item == null) return false;
+        
+        int finalPrice = GetBuyPrice(item);
+        
+        if (InventoryManager.Instance == null) {
+            Debug.LogError("[ShopManager] No InventoryManager found!");
             return false;
         }
-    }
-
-    public bool PurchaseItem(ItemSO item) {
-        int index = currentStock.IndexOf(item);
-        if (index >= 0) {
-            return PurchaseItem(index);
+        
+        if (InventoryManager.Instance.Gold < finalPrice) {
+            UIManager.Instance?.ShowNotification("Not enough gold!");
+            return false;
         }
-        return false;
+        
+        if (!InventoryManager.Instance.HasInventorySpace()) {
+            UIManager.Instance?.ShowNotification("Inventory full!");
+            return false;
+        }
+        
+        // Process purchase
+        InventoryManager.Instance.RemoveGold(finalPrice);
+        InventoryManager.Instance.AddItem(item);
+        currentStock[slotIndex] = null;
+        
+        OnItemPurchased?.Invoke(item);
+        return true;
     }
-
+    
     /// <summary>
     /// Sells an item to the shop.
     /// </summary>
-    public void SellItem(ItemSO item) {
-        if (item == null) return;
-
-        int sellPrice = inventory.GetSellPrice(item);
+    public bool SellItem(ItemSO item) {
+        if (item == null || InventoryManager.Instance == null) return false;
         
-        // Check if equipped
-        if (inventory.equippedWeapon == item || inventory.equippedArmor == item) {
-            inventory.Unequip(item);
-        } else {
-            inventory.RemoveItem(item);
-        }
-
-        player.AddGold(sellPrice);
+        int sellPrice = GetSellPrice(item);
+        
+        InventoryManager.Instance.RemoveItem(item);
+        InventoryManager.Instance.AddGold(sellPrice);
+        
         OnItemSold?.Invoke(item);
+        return true;
     }
-
-    public int GetPreviewDamage() => player?.stats?.Damage ?? 0;
-    public int GetPreviewDefense() => player?.stats?.Defense ?? 0;
-    public float GetPreviewCrit() => player?.stats?.Crit ?? 0f;
-
+    
+    /// <summary>
+    /// Gets the buy price for an item with multipliers applied.
+    /// </summary>
+    public int GetBuyPrice(ItemSO item) {
+        if (item == null) return 0;
+        return Mathf.RoundToInt(item.price * priceMultiplier);
+    }
+    
+    /// <summary>
+    /// Gets the sell price for an item.
+    /// </summary>
+    public int GetSellPrice(ItemSO item) {
+        if (item == null) return 0;
+        return Mathf.RoundToInt(item.sellPrice * 0.5f); // Shops buy at 50% of sell price
+    }
+    
+    /// <summary>
+    /// Adds an item to the available items pool.
+    /// </summary>
+    public void AddToAvailableItems(ItemSO item) {
+        if (item != null && !availableItems.Contains(item)) {
+            availableItems.Add(item);
+        }
+    }
+    
+    /// <summary>
+    /// Clears and sets new available items.
+    /// </summary>
+    public void SetAvailableItems(List<ItemSO> items) {
+        availableItems.Clear();
+        if (items != null) {
+            availableItems.AddRange(items);
+        }
+    }
+    
+    /// <summary>
+    /// Forces a stock refresh.
+    /// </summary>
+    public void ForceRefresh() {
+        refreshTimer = 0;
+        RefreshStock();
+    }
+    
+    /// <summary>
+    /// Called when shop UI is opened.
+    /// </summary>
+    public void OpenShop() {
+        if (autoRefreshOnOpen) {
+            RefreshStock();
+        }
+    }
+    
+    /// <summary>
+    /// Called when shop UI is closed.
+    /// </summary>
     public void CloseShop() {
-        EndPreview();
+        // Could save state or trigger events here
     }
 }

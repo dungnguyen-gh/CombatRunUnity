@@ -135,7 +135,7 @@ public class GambleSystem : MonoBehaviour {
         if (player == null) return false;
 
         // Check gold cost
-        if (option.goldCost > 0 && !player.SpendGold(option.goldCost)) {
+        if (option.goldCost > 0 && (inventory == null || !inventory.RemoveGold(option.goldCost))) {
             if (UIManager.Instance != null) {
                 UIManager.Instance.ShowNotification("Not enough gold!");
             }
@@ -167,17 +167,17 @@ public class GambleSystem : MonoBehaviour {
     }
 
     void ResolveGoldGamble(bool success) {
-        int currentGold = player.gold;
+        int currentGold = inventory?.Gold ?? 0;
         
         if (success) {
             int reward = currentGold;
-            player.AddGold(reward);
+            inventory?.AddGold(reward);
             if (UIManager.Instance != null) {
                 UIManager.Instance.ShowNotification($"JACKPOT! Gained {reward} gold!");
             }
         } else {
             int loss = currentGold / 2;
-            player.SpendGold(loss);
+            inventory?.RemoveGold(loss);
             if (UIManager.Instance != null) {
                 UIManager.Instance.ShowNotification($"Unlucky... Lost {loss} gold.");
             }
@@ -188,12 +188,12 @@ public class GambleSystem : MonoBehaviour {
         ItemRarity rarity = success ? ItemRarity.Rare : ItemRarity.Common;
         
         // Check inventory space first
-        if (inventory.items.Count >= inventory.maxInventorySlots) {
+        if (!inventory.HasInventorySpace()) {
             if (UIManager.Instance != null) {
                 UIManager.Instance.ShowNotification("Inventory full! Cannot receive item.");
             }
             // Refund the gold cost
-            player.AddGold(100);
+            inventory?.AddGold(100);
             return;
         }
         
@@ -212,12 +212,12 @@ public class GambleSystem : MonoBehaviour {
     /// Gets a random item of the specified rarity from the shop.
     /// </summary>
     ItemSO GetRandomItemOfRarity(ItemRarity rarity) {
-        if (shop == null || shop.allItems == null || shop.allItems.Count == 0) {
+        if (shop == null || shop.availableItems == null || shop.availableItems.Count == 0) {
             return null;
         }
         
         List<ItemSO> matchingItems = new List<ItemSO>();
-        foreach (var item in shop.allItems) {
+        foreach (var item in shop.availableItems) {
             if (item != null && item.rarity == rarity) {
                 matchingItems.Add(item);
             }
@@ -247,12 +247,12 @@ public class GambleSystem : MonoBehaviour {
         }
         
         // Check inventory space
-        if (inventory.items.Count >= inventory.maxInventorySlots) {
+        if (!inventory.HasInventorySpace()) {
             if (UIManager.Instance != null) {
                 UIManager.Instance.ShowNotification("Inventory full! Cannot receive cursed item.");
             }
             // Refund
-            player.AddGold(50);
+            inventory?.AddGold(50);
             return;
         }
 

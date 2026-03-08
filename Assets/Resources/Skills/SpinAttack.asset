@@ -9,19 +9,19 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 00000000000000000000000000000000, type: 0}
+  m_Script: {fileID: 11500000, guid: 3e35f3c9dcde42641a293e893b6826f0, type: 3}
   m_Name: SpinAttack
-  m_EditorClassIdentifier: 
-  skillId: skill_001
+  m_EditorClassIdentifier: Assembly-CSharp::SkillSO
+  skillId: spin_attack
   skillName: Spin Attack
-  description: Spin in a circle, damaging all nearby enemies.
-  icon: {fileID: 0}
+  description: Spin and damage all nearby enemies
+  icon: {fileID: 21300000, guid: 965bd1a490538104f8b9adf54c9abd19, type: 3}
   skillSlot: 0
-  cooldownTime: 5
+  cooldownTime: 3
   skillType: 0
   damageMultiplier: 1.5
-  range: 3
-  radius: 2.5
+  range: 0
+  radius: 2
   duration: 0
-  effectPrefab: {fileID: 0}
+  effectPrefab: {fileID: 6798603343521833931, guid: 99dac6aa628f2fc4ea31e709e5cbba97, type: 3}
   castSound: {fileID: 0}

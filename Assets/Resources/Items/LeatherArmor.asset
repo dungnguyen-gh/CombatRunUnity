@@ -12,16 +12,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 96b114dc508e69b488d5cf27810dc7d0, type: 3}
   m_Name: LeatherArmor
   m_EditorClassIdentifier: 
-  itemId: armor_001
+  itemId: leather_armor_001
   itemName: Leather Armor
   description: Basic protection made from tanned leather.
-  icon: {fileID: 0}
+  icon: {fileID: -7650184365866704765, guid: d1bc3ad920b0d41c5b5d8aff14f0dee9, type: 3}
   rarity: 0
-  slot: 1
+  slot: 2
   price: 40
+  isEquippable: 0
+  isStackable: 0
+  stackCount: 1
+  maxStackSize: 99
   damageBonus: 0
   defenseBonus: 3
   critBonus: 0
   attackSpeedBonus: 0
   maxHPBonus: 10
-  itemSprite: {fileID: 0}
+  weaponType: 0
+  itemSprite: {fileID: -7650184365866704765, guid: d1bc3ad920b0d41c5b5d8aff14f0dee9, type: 3}
+  setId: 

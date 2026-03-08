@@ -1,2 +1,2 @@
-public enum EquipSlot { None, Weapon, Armor }
-public enum WeaponType { None, Sword, Axe, Spear, Dagger, Mace }
+public enum EquipSlot { None, Weapon, Armor, Accessory }
+public enum WeaponType { None, Sword, Axe, Spear, Bow, Staff, Dagger, Mace }

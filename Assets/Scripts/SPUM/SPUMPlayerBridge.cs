@@ -58,13 +58,41 @@ public class SPUMPlayerBridge : MonoBehaviour
             return;
         }
         
-        // Initialize the override controller
-        spumPrefabs.OverrideControllerInit();
+        // Check if animator has a valid controller
+        if (spumPrefabs._anim == null)
+        {
+            Debug.LogError("SPUMPlayerBridge: No Animator found on SPUM_Prefabs!");
+            return;
+        }
+        
+        // CRITICAL FIX: Check if controller is already an OverrideController
+        if (spumPrefabs._anim.runtimeAnimatorController is AnimatorOverrideController)
+        {
+            // Already an override controller - skip initialization
+            Debug.Log("[SPUMPlayerBridge] Animator already has OverrideController - skipping initialization");
+        }
+        else if (spumPrefabs._anim.runtimeAnimatorController != null)
+        {
+            // Safe to initialize - it's a base controller
+            spumPrefabs.OverrideControllerInit();
+        }
+        else
+        {
+            Debug.LogError("SPUMPlayerBridge: No RuntimeAnimatorController assigned!");
+            return;
+        }
         
         // Ensure animation lists are populated
-        if (!spumPrefabs.allListsHaveItemsExist())
+        try
         {
-            spumPrefabs.PopulateAnimationLists();
+            if (!spumPrefabs.allListsHaveItemsExist())
+            {
+                spumPrefabs.PopulateAnimationLists();
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[SPUMPlayerBridge] PopulateAnimationLists failed: {ex.Message}");
         }
         
         // Start with idle animation
@@ -102,12 +130,12 @@ public class SPUMPlayerBridge : MonoBehaviour
             lastFacingDirection = facing;
             
             // Use rotation Y to flip character (more reliable than scale)
-            // Facing right (positive X) = 0 degrees
-            // Facing left (negative X) = 180 degrees
+            // SPUM sprites are drawn facing LEFT by default
+            // Y=180 flips to face right, Y=0 keeps default left-facing
             if (facing.x > 0.1f)
-                spumPrefabs.transform.rotation = Quaternion.Euler(0, 180, 0);
+                spumPrefabs.transform.rotation = Quaternion.Euler(0, 180, 0);    // Face Right
             else if (facing.x < -0.1f)
-                spumPrefabs.transform.rotation = Quaternion.Euler(0, 0, 0);
+                spumPrefabs.transform.rotation = Quaternion.Euler(0, 0, 0);      // Face Left
         }
     }
     

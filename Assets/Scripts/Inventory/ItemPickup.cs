@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// World pickup item with bobbing animation, magnet effect, and auto-pickup when close.
+/// World pickup item with bobbing animation, magnet effect, spin animation, and auto-pickup when close.
 /// </summary>
 public class ItemPickup : MonoBehaviour {
     public ItemSO item;
@@ -10,6 +10,11 @@ public class ItemPickup : MonoBehaviour {
     public float lifetime = 60f;
     public float bobHeight = 0.2f;
     public float bobSpeed = 2f;
+    
+    [Header("Spin Animation")]
+    public bool spinEnabled = true;
+    public float spinSpeed = 180f; // Degrees per second
+    public Vector3 spinAxis = Vector3.forward;
 
     private Transform player;
     private bool isMagnetized = false;
@@ -29,20 +34,42 @@ public class ItemPickup : MonoBehaviour {
         spriteRenderer = GetComponent<SpriteRenderer>();
         timeOffset = Random.Range(0f, Mathf.PI * 2f); // Random starting phase
         
-        // Set sprite from item
-        if (item != null && spriteRenderer != null) {
-            spriteRenderer.sprite = item.icon;
-        }
+        // Set sprite from item (use worldSprite if available, fallback to icon)
+        UpdateVisual();
 
         Destroy(gameObject, lifetime);
     }
+    
+    /// <summary>
+    /// Updates the visual sprite based on item data.
+    /// </summary>
+    void UpdateVisual() {
+        if (item != null && spriteRenderer != null) {
+            Sprite spriteToUse = item.GetWorldSprite();
+            if (spriteToUse != null) {
+                spriteRenderer.sprite = spriteToUse;
+                // Apply rarity color tint at reduced opacity for world items
+                Color rarityTint = item.rarityColor;
+                rarityTint.a = spriteRenderer.color.a; // Preserve original alpha
+                spriteRenderer.color = rarityTint;
+            }
+        }
+    }
 
     void Update() {
+        // Spin animation
+        if (spinEnabled && !isMagnetized) {
+            transform.Rotate(spinAxis, spinSpeed * Time.deltaTime);
+        }
+        
         // Bobbing animation (using offset to not interfere with magnet movement)
         float bobY = Mathf.Sin((Time.time + timeOffset) * bobSpeed) * bobHeight;
         bobOffset = new Vector3(0, bobY, 0);
 
         if (player == null) {
+            // Try to find player again
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+            
             // Apply bobbing only when not magnetized
             if (!isMagnetized) {
                 transform.position = startPosition + bobOffset;
@@ -61,6 +88,12 @@ public class ItemPickup : MonoBehaviour {
             Vector2 direction = (playerPos2D - pos2D).normalized;
             transform.position += (Vector3)direction * magnetSpeed * Time.deltaTime;
             // Don't update startPosition during magnet - this prevents bobbing center from shifting
+            
+            // Stop spinning when magnetized
+            if (spinEnabled) {
+                // Reset rotation to upright when being pulled
+                transform.rotation = Quaternion.Lerp(transform.rotation, Quaternion.identity, 5f * Time.deltaTime);
+            }
         } else {
             // Apply bobbing when not magnetized
             transform.position = startPosition + bobOffset;
@@ -77,8 +110,19 @@ public class ItemPickup : MonoBehaviour {
     /// </summary>
     public void SetItem(ItemSO newItem) {
         item = newItem;
-        if (item != null && spriteRenderer != null) {
-            spriteRenderer.sprite = item.icon;
+        UpdateVisual();
+    }
+    
+    /// <summary>
+    /// Configures the spin animation settings.
+    /// </summary>
+    public void SetSpinAnimation(bool enabled, float speed = 180f, Vector3? axis = null) {
+        spinEnabled = enabled;
+        if (enabled) {
+            spinSpeed = speed;
+            if (axis.HasValue) {
+                spinAxis = axis.Value;
+            }
         }
     }
 
@@ -94,9 +138,10 @@ public class ItemPickup : MonoBehaviour {
         // Use singleton instance instead of FindObjectOfType for better performance
         if (InventoryManager.Instance != null) {
             if (InventoryManager.Instance.AddItem(item)) {
-                // Show pickup notification
+                // Show pickup notification with rarity color
                 if (UIManager.Instance != null) {
-                    UIManager.Instance.ShowNotification($"Picked up: {item.itemName}");
+                    string rarityHex = ColorUtility.ToHtmlStringRGB(item.rarityColor);
+                    UIManager.Instance.ShowNotification($"Picked up: <color=#{rarityHex}>{item.itemName}</color>");
                 }
                 Destroy(gameObject);
             }

@@ -11,8 +11,8 @@ GameObject:
   - component: {fileID: 1471522627150198589}
   - component: {fileID: 1415416747063092330}
   - component: {fileID: 740087865157589716}
-  - component: {fileID: 3947541581859547232}
   - component: {fileID: -6624547241764519037}
+  - component: {fileID: 4699384463260750371}
   m_Layer: 0
   m_Name: Projectile
   m_TagString: Projectile
@@ -30,7 +30,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -6.14, y: 2.34143, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.3, y: 0.3, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -121,20 +121,6 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!114 &3947541581859547232
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4091720094128738193}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d6385a2b501002e499e89079369bc81a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Projectile
-  speed: 10
-  lifetime: 3
 --- !u!58 &-6624547241764519037
 CircleCollider2D:
   m_ObjectHideFlags: 0
@@ -171,3 +157,19 @@ CircleCollider2D:
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
   m_Radius: 0.5
+--- !u!114 &4699384463260750371
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4091720094128738193}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5032f425d47a14a49ad61a79b734a559, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Projectile
+  speed: 10
+  maxLifetime: 5
+  spriteRenderer: {fileID: 1415416747063092330}
+  trailParticles: {fileID: 0}
