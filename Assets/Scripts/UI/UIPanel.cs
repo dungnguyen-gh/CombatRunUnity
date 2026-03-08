@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using DG.Tweening;
 
 /// <summary>
 /// Base component for all UI panels in the game.
@@ -32,6 +33,16 @@ public class UIPanel : MonoBehaviour {
     
     [Tooltip("Type of animation to play when opening/closing")]
     public PanelAnimationType animationType = PanelAnimationType.Fade;
+    
+    [Header("DOTween Animation (Optional)")]
+    [Tooltip("If true, uses DOTween for smoother animations instead of coroutines")]
+    public bool useDOTween = true;
+    
+    [Tooltip("Bounce effect intensity for scale animations")]
+    public float bounceIntensity = 1.2f;
+    
+    [Tooltip("Slide distance for slide animations")]
+    public float slideDistance = 500f;
     
     [Header("Gamepad Navigation")]
     [Tooltip("First selectable element when panel opens (for gamepad navigation)")]
@@ -159,11 +170,13 @@ public class UIPanel : MonoBehaviour {
         }
         
         // Stop any existing animation
-        if (currentAnimation != null) {
-            StopCoroutine(currentAnimation);
-        }
+        KillCurrentAnimation();
         
-        currentAnimation = StartCoroutine(AnimateOpen());
+        if (useDOTween) {
+            AnimateOpenDOTween();
+        } else {
+            currentAnimation = StartCoroutine(AnimateOpen());
+        }
     }
     
     /// <summary>
@@ -181,11 +194,23 @@ public class UIPanel : MonoBehaviour {
         }
         
         // Stop any existing animation
+        KillCurrentAnimation();
+        
+        if (useDOTween) {
+            AnimateCloseDOTween();
+        } else {
+            currentAnimation = StartCoroutine(AnimateClose());
+        }
+    }
+    
+    void KillCurrentAnimation() {
         if (currentAnimation != null) {
             StopCoroutine(currentAnimation);
+            currentAnimation = null;
         }
-        
-        currentAnimation = StartCoroutine(AnimateClose());
+        // Kill any DOTween animations
+        DOTween.Kill(rectTransform);
+        DOTween.Kill(canvasGroup);
     }
     
     /// <summary>
@@ -417,6 +442,116 @@ public class UIPanel : MonoBehaviour {
         gameObject.SetActive(false);
         currentAnimation = null;
         OnPanelClosed?.Invoke();
+    }
+    
+    #endregion
+    
+    #region DOTween Animation Methods
+    
+    void AnimateOpenDOTween() {
+        gameObject.SetActive(true);
+        CanvasGroup.interactable = true;
+        CanvasGroup.blocksRaycasts = true;
+        
+        Sequence sequence = DOTween.Sequence();
+        
+        switch (animationType) {
+            case PanelAnimationType.Fade:
+                CanvasGroup.alpha = 0f;
+                sequence.Append(CanvasGroup.DOFade(1f, animationDuration).SetEase(Ease.OutCubic));
+                break;
+                
+            case PanelAnimationType.Scale:
+                CanvasGroup.alpha = 0f;
+                rectTransform.localScale = Vector3.zero;
+                sequence.Append(rectTransform.DOScale(1f, animationDuration).SetEase(Ease.OutBack, bounceIntensity));
+                sequence.Join(CanvasGroup.DOFade(1f, animationDuration * 0.5f).SetEase(Ease.OutCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromBottom:
+                CanvasGroup.alpha = 0f;
+                Vector2 bottomPos = new Vector2(rectTransform.anchoredPosition.x, -slideDistance);
+                rectTransform.anchoredPosition = bottomPos;
+                sequence.Append(rectTransform.DOAnchorPos(Vector2.zero, animationDuration).SetEase(Ease.OutBack, bounceIntensity));
+                sequence.Join(CanvasGroup.DOFade(1f, animationDuration * 0.5f).SetEase(Ease.OutCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromTop:
+                CanvasGroup.alpha = 0f;
+                Vector2 topPos = new Vector2(rectTransform.anchoredPosition.x, slideDistance);
+                rectTransform.anchoredPosition = topPos;
+                sequence.Append(rectTransform.DOAnchorPos(Vector2.zero, animationDuration).SetEase(Ease.OutBack, bounceIntensity));
+                sequence.Join(CanvasGroup.DOFade(1f, animationDuration * 0.5f).SetEase(Ease.OutCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromLeft:
+                CanvasGroup.alpha = 0f;
+                Vector2 leftPos = new Vector2(-slideDistance, rectTransform.anchoredPosition.y);
+                rectTransform.anchoredPosition = leftPos;
+                sequence.Append(rectTransform.DOAnchorPos(Vector2.zero, animationDuration).SetEase(Ease.OutBack, bounceIntensity));
+                sequence.Join(CanvasGroup.DOFade(1f, animationDuration * 0.5f).SetEase(Ease.OutCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromRight:
+                CanvasGroup.alpha = 0f;
+                Vector2 rightPos = new Vector2(slideDistance, rectTransform.anchoredPosition.y);
+                rectTransform.anchoredPosition = rightPos;
+                sequence.Append(rectTransform.DOAnchorPos(Vector2.zero, animationDuration).SetEase(Ease.OutBack, bounceIntensity));
+                sequence.Join(CanvasGroup.DOFade(1f, animationDuration * 0.5f).SetEase(Ease.OutCubic));
+                break;
+        }
+        
+        sequence.OnComplete(() => {
+            SetupNavigation();
+            OnPanelOpened?.Invoke();
+        });
+    }
+    
+    void AnimateCloseDOTween() {
+        CanvasGroup.interactable = false;
+        CanvasGroup.blocksRaycasts = false;
+        
+        Sequence sequence = DOTween.Sequence();
+        
+        switch (animationType) {
+            case PanelAnimationType.Fade:
+                sequence.Append(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+                
+            case PanelAnimationType.Scale:
+                sequence.Append(rectTransform.DOScale(0.8f, animationDuration).SetEase(Ease.InCubic));
+                sequence.Join(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromBottom:
+                Vector2 bottomPos = new Vector2(rectTransform.anchoredPosition.x, -slideDistance);
+                sequence.Append(rectTransform.DOAnchorPos(bottomPos, animationDuration).SetEase(Ease.InCubic));
+                sequence.Join(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromTop:
+                Vector2 topPos = new Vector2(rectTransform.anchoredPosition.x, slideDistance);
+                sequence.Append(rectTransform.DOAnchorPos(topPos, animationDuration).SetEase(Ease.InCubic));
+                sequence.Join(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromLeft:
+                Vector2 leftPos = new Vector2(-slideDistance, rectTransform.anchoredPosition.y);
+                sequence.Append(rectTransform.DOAnchorPos(leftPos, animationDuration).SetEase(Ease.InCubic));
+                sequence.Join(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+                
+            case PanelAnimationType.SlideFromRight:
+                Vector2 rightPos = new Vector2(slideDistance, rectTransform.anchoredPosition.y);
+                sequence.Append(rectTransform.DOAnchorPos(rightPos, animationDuration).SetEase(Ease.InCubic));
+                sequence.Join(CanvasGroup.DOFade(0f, animationDuration).SetEase(Ease.InCubic));
+                break;
+        }
+        
+        sequence.OnComplete(() => {
+            gameObject.SetActive(false);
+            OnPanelClosed?.Invoke();
+        });
     }
     
     #endregion

@@ -17,11 +17,60 @@ MonoBehaviour:
   description: Call down a meteor at target location
   icon: {fileID: 21300000, guid: 1d98195b762487443b91f80c6b3dce0c, type: 3}
   skillSlot: 2
-  cooldownTime: 8
+  rarity: 0
   skillType: 1
+  targeting: 2
+  castTime: 0
+  canMoveWhileCasting: 1
+  requiresLineOfSight: 0
+  cooldownTime: 8
+  manaCost: 0
+  healthCost: 0
   damageMultiplier: 3
+  flatDamageBonus: 0
+  critChanceBonus: 0
+  critDamageMultiplier: 1
   range: 0
   radius: 3
+  coneAngle: 360
   duration: 0
+  tickRate: 1
+  maxStacks: 1
+  dashDistance: 0
+  dashSpeed: 20
+  dashInvulnerable: 0
+  leaveTrail: 0
+  summonPrefab: {fileID: 0}
+  summonCount: 1
+  summonDuration: 10
+  summonFollowPlayer: 1
+  chainBounces: 3
+  chainRange: 5
+  chainDamageFalloff: 0.8
+  castEffectPrefab: {fileID: 0}
   effectPrefab: {fileID: 6798603343521833931, guid: 99dac6aa628f2fc4ea31e709e5cbba97, type: 3}
+  projectilePrefab: {fileID: 0}
+  persistentEffectPrefab: {fileID: 0}
   castSound: {fileID: 0}
+  impactSound: {fileID: 0}
+  loopSound: {fileID: 0}
+  animationTrigger: Skill
+  spumAnimationIndex: 0
+  animationSpeedMultiplier: 1
+  useScreenShake: 0
+  screenShakeIntensity: 0.3
+  screenShakeDuration: 0.2
+  useSlowMotion: 0
+  slowMotionScale: 0.5
+  slowMotionDuration: 0.3
+  applyBurn: 0
+  applyFreeze: 1
+  applyPoison: 0
+  applyShock: 0
+  applyStun: 0
+  statusDuration: 3
+  pierceEnemies: 0
+  explodeOnImpact: 0
+  explosionRadius: 2
+  homing: 0
+  homingStrength: 5
