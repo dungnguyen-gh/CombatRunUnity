@@ -2886,7 +2886,7 @@ MonoBehaviour:
   bossSpawnPoint: {fileID: 0}
   bossWave: 5
   player: {fileID: 6929889362242441486}
-  enemyContainer: {fileID: 0}
+  enemyContainer: {fileID: 1060217273}
   enemyPool: {fileID: 0}
   startingLives: 3
 --- !u!4 &1060217273
@@ -4151,6 +4151,12 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+  panelOpenSound: {fileID: 0}
+  panelCloseSound: {fileID: 0}
+  buttonClickSound: {fileID: 0}
+  navigationSound: {fileID: 0}
+  notificationSound: {fileID: 0}
+  gameOverSound: {fileID: 0}
   player: {fileID: 6929889362242441486}
   skillCaster: {fileID: 6929889362242441485}
   revivePanel: {fileID: 0}
@@ -4716,6 +4722,59 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1902742865}
   m_CullTransparentMesh: 1
+--- !u!1 &1967942051
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1967942053}
+  - component: {fileID: 1967942052}
+  m_Layer: 0
+  m_Name: EnemyPool
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1967942052
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1967942051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 226af9859c64d8a4ea40922d413f003d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyPool
+  enemyPools:
+  - poolId: 
+    prefab: {fileID: 0}
+    initialSize: 0
+    allowGrowth: 0
+    maxSize: 0
+  poolContainer: {fileID: 1967942053}
+  autoFacePlayer: 1
+  spawnInvulnerabilityTime: 0.5
+--- !u!4 &1967942053
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1967942051}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 173.8399, y: 139.97057, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2010069406
 GameObject:
   m_ObjectHideFlags: 0
@@ -12330,6 +12389,7 @@ MonoBehaviour:
   player: {fileID: 6929889362242441486}
   defaultProjectilePrefab: {fileID: 4091720094128738193, guid: 98c5686ec1478ca42b5b7bc6a85a1b53, type: 3}
   defaultShieldEffectPrefab: {fileID: 5807637073551105871, guid: 1dc4078999db22943929a8ddde100aa4, type: 3}
+  verboseLogging: 0
 --- !u!114 &6929889362242441486
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13746,3 +13806,4 @@ SceneRoots:
   - {fileID: 499454483}
   - {fileID: 1340466972}
   - {fileID: 164337025}
+  - {fileID: 1967942053}
