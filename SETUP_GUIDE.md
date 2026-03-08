@@ -6,10 +6,11 @@
 3. [Player Setup](#player-setup)
 4. [Managers Setup](#managers-setup)
 5. [UI Setup](#ui-setup)
-6. [Prefab Creation](#prefab-creation)
-7. [ScriptableObject Setup](#scriptableobject-setup)
-8. [Scene Setup](#scene-setup)
-9. [Common Errors & Solutions](#common-errors--solutions)
+6. [UI Animation Setup (DOTween)](#ui-animation-setup-dotween)
+7. [Prefab Creation](#prefab-creation)
+8. [ScriptableObject Setup](#scriptableobject-setup)
+9. [Scene Setup](#scene-setup)
+10. [Common Errors & Solutions](#common-errors--solutions)
 
 ---
 
@@ -419,6 +420,303 @@ Managers (Empty parent)
 2. Add Vertical Layout Group
 3. Position: Top-center of screen
 4. This is assigned to UIManager's **Notification Parent**
+
+---
+
+## UI Animation Setup (DOTween)
+
+This project uses **DOTween** for smooth, high-performance UI animations. DOTween is ~10x faster than Unity's Animator and creates zero GC allocations.
+
+### Step 1: DOTween Initial Setup
+
+**After importing DOTween from Asset Store:**
+
+1. Go to **Tools → Demigiant → DOTween Utility Panel**
+2. Click **"Setup DOTween..."**
+3. In the Modules panel, ensure these are enabled:
+   - ✓ DOTween (core)
+   - ✓ DOTweenModuleUI (required for UI animations)
+   - ✓ DOTweenModuleAudio (optional, for audio tweening)
+4. Click **"Apply"**
+
+**Verify Setup:**
+- Check `Assets/Resources/DOTweenSettings.asset` exists
+- No compiler errors should appear
+
+### Step 2: Add UIAnimationManager
+
+**Purpose:** Central manager for all UI animations with preset configurations.
+
+1. Under your `Managers` GameObject, create: `UIAnimationManager`
+2. Add Component: `UIAnimationManager`
+3. Configure settings:
+
+```
+Animation Settings:
+  Default Duration: 0.3
+  Default Ease: OutCubic
+  Bounce Ease: OutBack
+  Elastic Ease: OutElastic
+
+Panel Animation:
+  Panel Fade In Duration: 0.25
+  Panel Fade Out Duration: 0.2
+  Panel Scale In Duration: 0.3
+  Panel Scale Out Duration: 0.2
+  Panel Slide Distance: 500
+
+Button Animation:
+  Button Hover Scale: 1.1
+  Button Click Scale: 0.9
+  Button Animation Duration: 0.15
+```
+
+### Step 3: Add UIPanel Component to Panels
+
+**Purpose:** Handles open/close animations for any UI panel.
+
+1. Select your UI panel (e.g., `InventoryPanel`, `ShopPanel`, `PausePanel`)
+2. Add Component: `UIPanel`
+3. Configure:
+
+```
+Panel Settings:
+  Panel Id: "Inventory" (unique identifier)
+  Pauses Game: ✓ (check if this should pause gameplay)
+  Closeable By Escape: ✓ (check if Escape key should close it)
+  Start Hidden: ✓ (usually true)
+
+Animation:
+  Animation Duration: 0.3
+  Animation Type: Scale (or Fade, SlideFromBottom, etc.)
+  
+DOTween Animation:
+  Use DOTween: ✓ (enable for smooth animations)
+  Bounce Intensity: 1.2
+  Slide Distance: 500
+
+Gamepad Navigation:
+  First Selected: [Assign first button for controller navigation]
+  Auto Find First Selectable: ✓ (finds automatically if empty)
+```
+
+**Animation Types Available:**
+| Type | Description | Best For |
+|------|-------------|----------|
+| Fade | Simple alpha fade | Notifications, toasts |
+| Scale | Scale from 0 to 1 with bounce | Dialogs, popups |
+| SlideFromBottom | Slide up from bottom | Mobile-style menus |
+| SlideFromTop | Slide down from top | Dropdown menus |
+| SlideFromLeft | Slide from left | Side panels |
+| SlideFromRight | Slide from right | Side panels |
+
+### Step 4: Add AnimatedButton to Buttons
+
+**Purpose:** Automatic hover, press, and click animations.
+
+1. Select a Button GameObject
+2. Add Component: `AnimatedButton`
+3. Configure:
+
+```
+Animation Settings:
+  Animate Hover: ✓
+  Animate Click: ✓
+  Animate Press: ✓
+
+Hover:
+  Hover Scale: 1.1
+  Hover Duration: 0.15
+  Hover Ease: OutBack
+
+Click:
+  Click Punch: 0.2
+  Click Duration: 0.2
+
+Press:
+  Press Scale: 0.9
+  Press Duration: 0.1
+
+Colors (Optional):
+  Animate Color: ☐ (enable to change colors)
+  Hover Color: White
+  Pressed Color: Gray
+```
+
+### Step 5: Add UIAnimator to Any UI Element
+
+**Purpose:** Generic animator for any UI element (not just buttons).
+
+**Use Cases:**
+- Animated icons
+- Floating damage numbers
+- Pulsing notifications
+- Floating menu items
+
+**Setup:**
+1. Select any UI GameObject
+2. Add Component: `UIAnimator`
+3. Configure based on need:
+
+```
+Hover Animation:
+  Animate Hover: ✓
+  Hover Scale: 1.1
+  Hover Duration: 0.15
+
+Click Animation:
+  Animate Click: ✓
+  Click Scale: 0.9
+  Click Duration: 0.1
+
+Idle Animation (Optional):
+  Animate Idle: ✓
+  Idle Type: Pulse (or Float, Shake, Rotate)
+  Idle Duration: 1
+  Idle Magnitude: 0.1
+```
+
+**Idle Animation Types:**
+| Type | Effect |
+|------|--------|
+| Pulse | Scale up/down continuously |
+| Float | Move up/down gently |
+| Shake | Subtle shake effect |
+| Rotate | Gentle rotation |
+
+### Step 6: Scripting UI Animations
+
+**Opening a Panel via Code:**
+```csharp
+// Get the UIPanel component
+UIPanel panel = GetComponent<UIPanel>();
+
+// Open with animation
+panel.Open();
+
+// Close with animation
+panel.Close();
+
+// Instant show/hide (no animation)
+panel.ShowInstant();
+panel.HideInstant();
+```
+
+**Using UIAnimationManager:**
+```csharp
+// Animate panel open with scale effect
+UIAnimationManager.Instance.AnimatePanelOpen(panelRect, panelCanvasGroup);
+
+// Animate button hover
+UIAnimationManager.Instance.AnimateButtonHover(buttonTransform);
+
+// Animate notification
+UIAnimationManager.Instance.AnimateNotificationShow(notificationRect);
+
+// Screen shake effect
+UIAnimationManager.Instance.ShakeScreen(cameraTransform, 0.5f, 1f);
+```
+
+**Custom DOTween Animations:**
+```csharp
+using DG.Tweening;
+
+// Fade in
+myImage.DOFade(1f, 0.3f).SetEase(Ease.OutCubic);
+
+// Scale with bounce
+myRect.DOScale(1.2f, 0.3f).SetEase(Ease.OutBack);
+
+// Move to position
+myRect.DOAnchorPos(Vector2.zero, 0.5f).SetEase(Ease.OutCubic);
+
+// Punch effect (wobble)
+myRect.DOPunchScale(new Vector3(0.2f, 0.2f, 0.2f), 0.3f);
+
+// Shake
+myRect.DOShakeAnchorPos(0.5f, 10f, 10, 90);
+
+// Chained sequence
+Sequence seq = DOTween.Sequence();
+seq.Append(myRect.DOScale(1.5f, 0.2f));
+seq.Append(myRect.DOScale(1f, 0.3f).SetEase(Ease.OutBack));
+seq.Play();
+```
+
+### Step 7: Common Animation Patterns
+
+**Damage Number Float-Up:**
+```csharp
+// Float up and fade out
+Sequence seq = DOTween.Sequence();
+seq.Join(damageRect.DOAnchorPosY(endY, 1f));
+seq.Join(damageCanvas.DOFade(0f, 0.5f).SetDelay(0.5f));
+seq.OnComplete(() => Destroy(damageRect.gameObject));
+```
+
+**Skill Cooldown Pulse:**
+```csharp
+// Pulsing effect when skill is ready
+skillIcon.DOScale(1.1f, 0.5f)
+    .SetEase(Ease.InOutSine)
+    .SetLoops(-1, LoopType.Yoyo);
+```
+
+**Gold Gain Animation:**
+```csharp
+// Float up gold text
+UIAnimationManager.Instance.AnimateGoldGain(goldTextRect);
+```
+
+**Critical Hit Effect:**
+```csharp
+// Scale punch + shake
+Sequence seq = DOTween.Sequence();
+seq.Append(damageText.DOScale(1.5f, 0.1f));
+seq.Append(damageText.DOShakeScale(0.3f, 0.3f));
+seq.Append(damageText.DOScale(1f, 0.2f));
+```
+
+### DOTween Best Practices
+
+**1. Always Kill Tweens:**
+```csharp
+// When destroying objects
+void OnDestroy() {
+    DOTween.Kill(transform);
+}
+
+// Before starting new tween on same object
+DOTween.Kill(myRect);
+myRect.DOScale(2f, 0.3f);
+```
+
+**2. Use SetTarget for Cleanup:**
+```csharp
+myRect.DOScale(2f, 0.3f).SetTarget(this);
+// Now DOTween.Kill(this) will kill this tween
+```
+
+**3. Scene Transition Cleanup:**
+```csharp
+// In your scene transition manager
+void OnSceneUnload() {
+    UIAnimationManager.Instance?.KillAllTweens();
+    DOTween.KillAll();
+}
+```
+
+**4. TimeScale-Independent Animations:**
+```csharp
+// For pause menu animations when time is paused
+myPanel.DOFade(1f, 0.3f).SetUpdate(true);
+```
+
+**5. Performance Tips:**
+- Reuse sequences instead of creating new ones
+- Use `SetAutoKill(false)` for reusable tweens
+- Pool animated objects when possible
+- Avoid animating too many elements simultaneously
 
 ---
 
@@ -945,6 +1243,60 @@ Input System Package: Both or Input System Package (New)
 
 **Fix:** The scripts use `FindFirstObjectByType` which is correct for Unity 2023+
 For older versions, replace with `FindObjectOfType`
+
+### Error: "The type or namespace name 'DG' could not be found"
+
+**Cause:** DOTween not imported or not set up
+
+**Fix:**
+1. Import DOTween from Asset Store
+2. Run **Tools → Demigiant → DOTween Utility Panel → Setup DOTween**
+3. Wait for Unity to compile
+
+### Error: "DOFade/DOScale/etc is not a member of..."
+
+**Cause:** Missing DOTween namespace or module
+
+**Fix:**
+1. Add `using DG.Tweening;` at top of script
+2. Ensure DOTweenModuleUI is enabled in DOTween Utility Panel
+3. Target must be RectTransform, CanvasGroup, or Graphic
+
+### Error: UI animations not playing / jerky
+
+**Possible Causes:**
+1. `useDOTween` not checked on UIPanel
+2. Conflicting animations running
+3. DOTween not initialized
+
+**Fix:**
+- Check "Use DOTween" on UIPanel component
+- Kill existing tweens: `DOTween.Kill(transform)` before new animation
+- Ensure UIAnimationManager exists in scene (calls DOTween.Init())
+
+### Error: "Tween was killed while playing"
+
+**Cause:** Object destroyed while tweening
+
+**Fix:**
+```csharp
+// Kill tweens before destroying
+void OnDestroy() {
+    DOTween.Kill(transform);
+}
+```
+
+### Error: Animations continue after scene change
+
+**Cause:** Tweens not cleaned up between scenes
+
+**Fix:**
+```csharp
+// In scene loading code
+DOTween.KillAll();
+// or
+UIAnimationManager.Instance.KillAllTweens();
+```
 
 ---
 
